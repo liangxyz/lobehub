@@ -50,9 +50,9 @@ jobs:
           images: ${{ env.REGISTRY_IMAGE }}
           tags: |
             type=semver,pattern={{version}}
-            type=raw,value=latest,enable=${{ !github.event.release.prerelease }}
+            type=raw,value=latest,enable=${{ github.event_name != 'release' || !github.event.release.prerelease }}
             type=raw,value=canary,enable=${{ contains(github.event.release.tag_name, '-canary.') || github.ref == 'refs/heads/canary' }}
-            type=raw,value=${{ github.event.release.tag_name }},enable=${{ github.event.release.prerelease }}
+            type=raw,value=${{ github.event.release.tag_name }},enable=${{ github.event.release.prerelease == true }}
             type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
             type=sha,format=short,prefix=
 
@@ -119,9 +119,9 @@ jobs:
           images: ${{ env.REGISTRY_IMAGE }}
           tags: |
             type=semver,pattern={{version}}
-            type=raw,value=latest,enable=${{ !github.event.release.prerelease }}
+            type=raw,value=latest,enable=${{ github.event_name != 'release' || !github.event.release.prerelease }}
             type=raw,value=canary,enable=${{ contains(github.event.release.tag_name, '-canary.') || github.ref == 'refs/heads/canary' }}
-            type=raw,value=${{ github.event.release.tag_name }},enable=${{ github.event.release.prerelease }}
+            type=raw,value=${{ github.event.release.tag_name }},enable=${{ github.event.release.prerelease == true }}
             type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
             type=sha,format=short,prefix=
 
