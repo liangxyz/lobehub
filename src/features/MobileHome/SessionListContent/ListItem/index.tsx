@@ -1,3 +1,4 @@
+import { DEFAULT_AVATAR } from '@lobechat/const';
 import { type ListItemProps } from '@lobehub/ui';
 import { List } from '@lobehub/ui';
 import { Avatar } from '@lobehub/ui/base-ui';
@@ -29,9 +30,17 @@ const styles = createStaticStyles(({ css, cssVar }) => {
   };
 });
 
+export const resolveSessionAvatar = (
+  avatar?: string | { avatar: string; background?: string }[] | null,
+): string => {
+  if (typeof avatar === 'string' && avatar) return avatar;
+  if (Array.isArray(avatar) && avatar.length > 0 && avatar[0]?.avatar) return avatar[0].avatar;
+  return DEFAULT_AVATAR;
+};
+
 const ListItem = memo<
   Omit<ListItemProps, 'avatar' | 'key'> & {
-    avatar: string | { avatar: string; background?: string }[];
+    avatar?: string | { avatar: string; background?: string }[];
     avatarBackground?: string;
     type?: 'agent' | 'group' | 'inbox';
   }
@@ -42,12 +51,12 @@ const ListItem = memo<
 
   const avatarRender = useMemo(() => {
     if (type === 'group') {
-      const avatars = Array.isArray(avatar) ? avatar : [avatar];
+      const avatars = Array.isArray(avatar) ? avatar : avatar ? [avatar] : [];
       return <GroupAvatar avatars={avatars} size={40} />;
     }
 
-    // For regular sessions, use the regular Avatar component
-    const agentAvatar = typeof avatar === 'string' ? avatar : avatar[0]?.avatar;
+    // For regular sessions/agents, use the regular Avatar component with fallback
+    const agentAvatar = resolveSessionAvatar(avatar);
 
     return (
       <Avatar animation={isHovering} avatar={agentAvatar} background={avatarBackground} size={40} />

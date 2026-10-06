@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { shallow } from 'zustand/shallow';
 
 import { agentDisplayName } from '@lobechat/types';
+import { DEFAULT_AVATAR } from '@lobechat/const';
 import { isDesktop } from '@/const/version';
 import { useChatStore } from '@/store/chat';
 import { operationSelectors } from '@/store/chat/selectors';
@@ -35,7 +36,7 @@ const AgentItem = memo<AgentItemProps>(({ groupId, id }) => {
   const pin = item?.pinned ?? false;
   // name wins over title (matches desktop sidebar); i18n fallback for unnamed
   const title = agentDisplayName(item, t('untitledAgent'));
-  const avatar = item?.avatar ?? undefined;
+  const avatar = item?.avatar || DEFAULT_AVATAR;
   const avatarBackground = item?.backgroundColor ?? undefined;
   const updateAt = item?.updatedAt;
 
