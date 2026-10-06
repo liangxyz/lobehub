@@ -7,7 +7,6 @@ import { memo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useHomeStore } from '@/store/home';
-import { useSessionStore } from '@/store/session';
 import { useUserStore } from '@/store/user';
 import { settingsSelectors } from '@/store/user/selectors';
 
@@ -16,19 +15,19 @@ const SessionSearchBar = memo<{ mobile?: boolean }>(({ mobile }) => {
   const isLoaded = useUserStore((s) => s.isLoaded);
   const hotkey = useUserStore(settingsSelectors.getHotkeyById(HotkeyEnum.Search));
 
-  const [keywords, updateSearchKeywords] = useSessionStore((s) => [
-    s.sessionSearchKeywords,
-    s.updateSearchKeywords,
+  const [keywords, useSearchAgents, updateAgentSearchKeywords] = useHomeStore((s) => [
+    s.agentSearchKeywords,
+    s.useSearchAgents,
+    s.updateAgentSearchKeywords,
   ]);
-  const useSearchAgents = useHomeStore((s) => s.useSearchAgents);
 
-  const { isValidating } = useSearchAgents(keywords?.trim() || undefined);
+  const { isValidating } = useSearchAgents(keywords);
 
   const handleChange = useCallback(
     (e: ChangeEvent<HTMLInputElement>) => {
-      updateSearchKeywords(e.target.value);
+      updateAgentSearchKeywords(e.target.value);
     },
-    [updateSearchKeywords],
+    [updateAgentSearchKeywords],
   );
 
   return (
@@ -39,7 +38,7 @@ const SessionSearchBar = memo<{ mobile?: boolean }>(({ mobile }) => {
       placeholder={t('searchAgentPlaceholder')}
       shortKey={hotkey}
       spotlight={!mobile}
-      value={keywords}
+      value={keywords || ''}
       variant={'filled'}
       onChange={handleChange}
     />
