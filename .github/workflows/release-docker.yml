@@ -1,9 +1,15 @@
 name: Publish Docker Image
 permissions:
   contents: read
+  packages: write
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Custom tag (optional)'
+        required: false
+        default: ''
   release:
     types: [published]
 
@@ -12,7 +18,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  REGISTRY_IMAGE: lobehub/lobehub
+  REGISTRY_IMAGE: ghcr.io/${{ github.repository }}
 
 jobs:
   build:
@@ -45,17 +51,19 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=raw,value=latest,enable=${{ !github.event.release.prerelease }}
-            type=raw,value=canary,enable=${{ contains(github.event.release.tag_name, '-canary.') }}
+            type=raw,value=canary,enable=${{ contains(github.event.release.tag_name, '-canary.') || github.ref == 'refs/heads/canary' }}
             type=raw,value=${{ github.event.release.tag_name }},enable=${{ github.event.release.prerelease }}
+            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
+            type=sha,format=short,prefix=
 
       - name: Docker login
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_REGISTRY_USER }}
-          password: ${{ secrets.DOCKER_REGISTRY_PASSWORD }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Get commit SHA
-        if: github.ref == 'refs/heads/main'
         id: vars
         run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
@@ -112,14 +120,17 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=raw,value=latest,enable=${{ !github.event.release.prerelease }}
-            type=raw,value=canary,enable=${{ contains(github.event.release.tag_name, '-canary.') }}
+            type=raw,value=canary,enable=${{ contains(github.event.release.tag_name, '-canary.') || github.ref == 'refs/heads/canary' }}
             type=raw,value=${{ github.event.release.tag_name }},enable=${{ github.event.release.prerelease }}
+            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
+            type=sha,format=short,prefix=
 
       - name: Docker login
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_REGISTRY_USER }}
-          password: ${{ secrets.DOCKER_REGISTRY_PASSWORD }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create manifest list and push
         working-directory: /tmp/digests
@@ -131,4 +142,5 @@ jobs:
 
       - name: Inspect image
         run: |
-          docker buildx imagetools inspect ${{ env.REGISTRY_IMAGE }}:${{ steps.meta.outputs.version }}
+          VERSION="${{ steps.meta.outputs.version }}"
+          docker buildx imagetools inspect ${{ env.REGISTRY_IMAGE }}:${VERSION:-latest}
