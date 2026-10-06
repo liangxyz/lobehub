@@ -1,0 +1,130 @@
+name: Sync Upstream Canary & Publish Docker
+
+on:
+  schedule:
+    # Run every 30 minutes (staggered at minute 17 and 47 to avoid peak-hour runner congestion)
+    - cron: '17,47 * * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: sync-upstream-canary
+  cancel-in-progress: false
+
+jobs:
+  check-and-sync:
+    name: Check & Sync Upstream
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      should_publish: ${{ steps.sync.outputs.should_publish }}
+      target_tag: ${{ steps.check.outputs.target_tag }}
+      normalized_version: ${{ steps.check.outputs.normalized_version }}
+      synced_sha: ${{ steps.sync.outputs.synced_sha }}
+    steps:
+      - name: Checkout canary
+        uses: actions/checkout@v7
+        with:
+          ref: canary
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check for new upstream canary release
+        id: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node .github/scripts/check-upstream-canary.mjs check
+
+      - name: Fetch upstream and merge
+        id: sync
+        if: steps.check.outputs.should_sync == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          TARGET_TAG="${{ steps.check.outputs.target_tag }}"
+          echo "Target tag to sync: ${TARGET_TAG}"
+
+          git remote add upstream https://github.com/lobehub/lobehub.git || git remote set-url upstream https://github.com/lobehub/lobehub.git
+          git fetch --no-tags upstream "refs/tags/${TARGET_TAG}"
+
+          UPSTREAM_COMMIT=$(git rev-parse 'FETCH_HEAD^{commit}')
+          echo "Upstream commit for ${TARGET_TAG}: ${UPSTREAM_COMMIT}"
+
+          # Execute merge helper that strictly preserves fork workflows
+          chmod +x .github/scripts/sync-merge.sh
+          .github/scripts/sync-merge.sh "${UPSTREAM_COMMIT}" "${TARGET_TAG}"
+
+          CURRENT_SHA=$(git rev-parse HEAD)
+          echo "synced_sha=${CURRENT_SHA}" >> $GITHUB_OUTPUT
+          echo "should_publish=true" >> $GITHUB_OUTPUT
+
+          git push origin canary
+
+  publish-docker:
+    name: Publish Docker Image
+    needs: check-and-sync
+    if: needs.check-and-sync.outputs.should_publish == 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/release-docker.yml
+    with:
+      tag: ${{ needs.check-and-sync.outputs.normalized_version }}
+      commit_sha: ${{ needs.check-and-sync.outputs.synced_sha }}
+      channel: 'canary'
+    secrets: inherit
+
+  record-success:
+    name: Record Success
+    needs: [check-and-sync, publish-docker]
+    if: success() && needs.check-and-sync.outputs.should_publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout canary
+        uses: actions/checkout@v7
+        with:
+          ref: canary
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Persist published release state and tag
+        env:
+          TARGET_TAG: ${{ needs.check-and-sync.outputs.target_tag }}
+          SYNCED_SHA: ${{ needs.check-and-sync.outputs.synced_sha }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          TARGET_TAG="${{ needs.check-and-sync.outputs.target_tag }}"
+          SYNCED_SHA="${{ needs.check-and-sync.outputs.synced_sha }}"
+
+          echo "Recording success for ${TARGET_TAG} (${SYNCED_SHA})"
+          node .github/scripts/check-upstream-canary.mjs record "${TARGET_TAG}" "${SYNCED_SHA}"
+
+          git add .github/upstream-canary-state.json
+          git commit -m "chore: record published upstream canary ${TARGET_TAG} [skip ci]"
+
+          # Create or verify tag on SYNCED_SHA
+          if git rev-parse "refs/tags/${TARGET_TAG}" >/dev/null 2>&1; then
+            EXISTING_TAG_SHA=$(git rev-parse "refs/tags/${TARGET_TAG}^{commit}")
+            if [[ "${EXISTING_TAG_SHA}" != "${SYNCED_SHA}" ]]; then
+              echo "::error::Tag ${TARGET_TAG} already exists on commit ${EXISTING_TAG_SHA}, expected ${SYNCED_SHA}" >&2
+              exit 1
+            fi
+          else
+            git tag -a "${TARGET_TAG}" "${SYNCED_SHA}" -m "Release ${TARGET_TAG} (synced from upstream lobehub)"
+          fi
+
+          git push origin canary "${TARGET_TAG}" --atomic

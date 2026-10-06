@@ -7,9 +7,37 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Custom tag (optional)'
+        description: 'Normalized version tag (optional, e.g. 2.2.19-canary.39)'
         required: false
         default: ''
+        type: string
+      commit_sha:
+        description: 'Specific commit SHA to checkout (optional)'
+        required: false
+        default: ''
+        type: string
+      channel:
+        description: 'Release channel (canary or stable)'
+        required: false
+        default: 'canary'
+        type: string
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Normalized version tag (optional, e.g. 2.2.19-canary.39)'
+        required: false
+        default: ''
+        type: string
+      commit_sha:
+        description: 'Exact commit SHA to checkout and build'
+        required: false
+        default: ''
+        type: string
+      channel:
+        description: 'Release channel (canary or stable)'
+        required: false
+        default: 'canary'
+        type: string
   release:
     types: [published]
 
@@ -39,22 +67,71 @@ jobs:
 
       - name: Checkout base
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.commit_sha != '' && inputs.commit_sha || '' }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      - name: Prepare metadata inputs
+        id: prep
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_CHANNEL: ${{ inputs.channel }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+          GITHUB_REF: ${{ github.ref }}
+        run: |
+          RAW_TAG="${INPUT_TAG:-$RELEASE_TAG}"
+          NORM_TAG="${RAW_TAG#v}"
+
+          # Validate version tag syntax if provided (Docker tag standard: [a-zA-Z0-9_.-]{1,128})
+          if [[ -n "${NORM_TAG}" ]]; then
+            if ! [[ "${NORM_TAG}" =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$ ]]; then
+              echo "::error::Invalid docker tag format: '${NORM_TAG}'" >&2
+              exit 1
+            fi
+          fi
+          echo "version=${NORM_TAG}" >> $GITHUB_OUTPUT
+
+          # Validate channel
+          IS_CANARY="false"
+          if [[ "${INPUT_CHANNEL}" == "canary" ]]; then
+            IS_CANARY="true"
+          elif [[ "${INPUT_CHANNEL}" == "stable" ]]; then
+            IS_CANARY="false"
+          elif [[ -n "${INPUT_CHANNEL}" ]]; then
+            echo "::error::Invalid channel '${INPUT_CHANNEL}'. Expected 'canary' or 'stable'." >&2
+            exit 1
+          elif [[ "${NORM_TAG}" == *"canary"* ]] || [[ "${GITHUB_REF}" == "refs/heads/canary" ]] || [[ "${RELEASE_TAG}" == *"-canary."* ]]; then
+            IS_CANARY="true"
+          fi
+          echo "is_canary=${IS_CANARY}" >> $GITHUB_OUTPUT
+
+          IS_LATEST="false"
+          if [[ "${IS_CANARY}" != "true" ]] && [[ "${IS_PRERELEASE}" != "true" ]]; then
+            IS_LATEST="true"
+          fi
+          echo "is_latest=${IS_LATEST}" >> $GITHUB_OUTPUT
+
+      - name: Get commit SHA
+        id: vars
+        run: |
+          echo "full_sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY_IMAGE }}
+          labels: |
+            org.opencontainers.image.revision=${{ steps.vars.outputs.full_sha }}
           tags: |
-            type=semver,pattern={{version}}
-            type=raw,value=latest,enable=${{ github.event_name != 'release' || !github.event.release.prerelease }}
-            type=raw,value=canary,enable=${{ contains(github.event.release.tag_name, '-canary.') || github.ref == 'refs/heads/canary' }}
-            type=raw,value=${{ github.event.release.tag_name }},enable=${{ github.event.release.prerelease == true }}
-            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
-            type=sha,format=short,prefix=
+            type=raw,value=latest,enable=${{ steps.prep.outputs.is_latest == 'true' }}
+            type=raw,value=canary,enable=${{ steps.prep.outputs.is_canary == 'true' }}
+            type=raw,value=${{ steps.prep.outputs.version }},enable=${{ steps.prep.outputs.version != '' }}
+            type=raw,value=${{ steps.vars.outputs.sha_short }},enable=${{ steps.vars.outputs.sha_short != '' }}
 
       - name: Docker login
         uses: docker/login-action@v3
@@ -62,10 +139,6 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Get commit SHA
-        id: vars
-        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
       - name: Build and export
         id: build
@@ -101,6 +174,8 @@ jobs:
     steps:
       - name: Checkout base
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.commit_sha != '' && inputs.commit_sha || '' }}
 
       - name: Download digests
         uses: actions/download-artifact@v7
@@ -112,18 +187,65 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Prepare metadata inputs
+        id: prep
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_CHANNEL: ${{ inputs.channel }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+          GITHUB_REF: ${{ github.ref }}
+        run: |
+          RAW_TAG="${INPUT_TAG:-$RELEASE_TAG}"
+          NORM_TAG="${RAW_TAG#v}"
+
+          # Validate version tag syntax if provided (Docker tag standard: [a-zA-Z0-9_.-]{1,128})
+          if [[ -n "${NORM_TAG}" ]]; then
+            if ! [[ "${NORM_TAG}" =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$ ]]; then
+              echo "::error::Invalid docker tag format: '${NORM_TAG}'" >&2
+              exit 1
+            fi
+          fi
+          echo "version=${NORM_TAG}" >> $GITHUB_OUTPUT
+
+          # Validate channel
+          IS_CANARY="false"
+          if [[ "${INPUT_CHANNEL}" == "canary" ]]; then
+            IS_CANARY="true"
+          elif [[ "${INPUT_CHANNEL}" == "stable" ]]; then
+            IS_CANARY="false"
+          elif [[ -n "${INPUT_CHANNEL}" ]]; then
+            echo "::error::Invalid channel '${INPUT_CHANNEL}'. Expected 'canary' or 'stable'." >&2
+            exit 1
+          elif [[ "${NORM_TAG}" == *"canary"* ]] || [[ "${GITHUB_REF}" == "refs/heads/canary" ]] || [[ "${RELEASE_TAG}" == *"-canary."* ]]; then
+            IS_CANARY="true"
+          fi
+          echo "is_canary=${IS_CANARY}" >> $GITHUB_OUTPUT
+
+          IS_LATEST="false"
+          if [[ "${IS_CANARY}" != "true" ]] && [[ "${IS_PRERELEASE}" != "true" ]]; then
+            IS_LATEST="true"
+          fi
+          echo "is_latest=${IS_LATEST}" >> $GITHUB_OUTPUT
+
+      - name: Get commit SHA
+        id: vars
+        run: |
+          echo "full_sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY_IMAGE }}
+          labels: |
+            org.opencontainers.image.revision=${{ steps.vars.outputs.full_sha }}
           tags: |
-            type=semver,pattern={{version}}
-            type=raw,value=latest,enable=${{ github.event_name != 'release' || !github.event.release.prerelease }}
-            type=raw,value=canary,enable=${{ contains(github.event.release.tag_name, '-canary.') || github.ref == 'refs/heads/canary' }}
-            type=raw,value=${{ github.event.release.tag_name }},enable=${{ github.event.release.prerelease == true }}
-            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
-            type=sha,format=short,prefix=
+            type=raw,value=latest,enable=${{ steps.prep.outputs.is_latest == 'true' }}
+            type=raw,value=canary,enable=${{ steps.prep.outputs.is_canary == 'true' }}
+            type=raw,value=${{ steps.prep.outputs.version }},enable=${{ steps.prep.outputs.version != '' }}
+            type=raw,value=${{ steps.vars.outputs.sha_short }},enable=${{ steps.vars.outputs.sha_short != '' }}
 
       - name: Docker login
         uses: docker/login-action@v3
@@ -135,12 +257,11 @@ jobs:
       - name: Create manifest list and push
         working-directory: /tmp/digests
         run: |
-          # 过滤掉带 v 前缀的 tag（如 lobehub/lobehub:v2.1.29），只保留无 v 前缀的版本号和 latest
-          TAGS=$(jq -cr '.tags | map(select(test(":v\\d") | not)) | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          TAGS=$(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON")
           docker buildx imagetools create $TAGS \
             $(printf '${{ env.REGISTRY_IMAGE }}@sha256:%s ' *)
 
       - name: Inspect image
         run: |
-          VERSION="${{ steps.meta.outputs.version }}"
-          docker buildx imagetools inspect ${{ env.REGISTRY_IMAGE }}:${VERSION:-latest}
+          TARGET_TAG="${{ steps.prep.outputs.version != '' && steps.prep.outputs.version || (steps.prep.outputs.is_canary == 'true' && 'canary' || 'latest') }}"
+          docker buildx imagetools inspect ${{ env.REGISTRY_IMAGE }}:${TARGET_TAG}
