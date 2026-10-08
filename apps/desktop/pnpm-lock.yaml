@@ -11,9 +11,6 @@ overrides:
   vitest: 5.0.3
   zod@^4: 4.6.5
 
-patchedDependencies:
-  electron-sparkle-updater@0.5.2: 6f583444e425a99e21e374a9afab303612eb8255ee21194afdb77f347c6cc045
-
 importers:
 
   .:
@@ -34,8 +31,8 @@ importers:
         specifier: ^5.4.4
         version: 5.4.4
       electron-sparkle-updater:
-        specifier: 0.5.2
-        version: 0.5.2(patch_hash=6f583444e425a99e21e374a9afab303612eb8255ee21194afdb77f347c6cc045)(electron@44.5.1(supports-color@9.4.0))
+        specifier: 0.5.3
+        version: 0.5.3(electron@44.5.1(supports-color@9.4.0))
       font-list:
         specifier: ^2.1.0
         version: 2.1.0
@@ -641,8 +638,8 @@ importers:
   ../../packages/types:
     dependencies:
       '@lobehub/market-sdk':
-        specifier: 0.41.0
-        version: 0.41.0(supports-color@9.4.0)(zod@4.6.5)
+        specifier: 0.42.0
+        version: 0.42.0(supports-color@9.4.0)(zod@4.6.5)
       '@lobehub/market-types':
         specifier: ^1.17.1
         version: 1.17.1
@@ -2184,13 +2181,16 @@ packages:
       react: 19.2.7
       react-dom: 19.2.7
 
-  '@lobehub/market-sdk@0.41.0':
-    resolution: {integrity: sha512-zrzOWVf/aIECfW5w3ZbiV+swPNdeSxpbiSQG6uOLq7G53QKfDm/VNcOWqrZFO+zNMWwXYtJp7BgB9hXVL6tmxg==}
+  '@lobehub/market-sdk@0.42.0':
+    resolution: {integrity: sha512-1c+hf2lP9tqX9qyg6+J5Q90dYqvdZz7agrYWB9h9tiEJdIS57bzFcSRJZzxUiesbQ7jmvS5a7kBMUwsd9kxzKw==}
     peerDependencies:
       zod: ^3.24.4
 
   '@lobehub/market-types@1.17.1':
     resolution: {integrity: sha512-jwY3nXyJaP4V3kBYQpnPMYgWC4LWW03g1BP+s43p4d7SMWJ/wlDwfENoIyDP5p9NFZPIPV4ajaWpidcW7iENOg==}
+
+  '@lobehub/market-types@1.18.0':
+    resolution: {integrity: sha512-1xx+y4rtRpN0oplvJEC1WvmCymJoUNUJIR8wr/U+d/jgrPvJSb3as/NZRCUrxeFd6BDSlQHyJl12CwzFNA6ZAw==}
 
   '@lobehub/streamdown@1.4.0':
     resolution: {integrity: sha512-kkqq2nqwcqz+rV/eUPQ7vY1TQWHWZE3kQt1MsSLtNFLNXMoKYPiF+cdahP97uunWKtf2dB48q/nkSWaZzEKRSw==}
@@ -4893,8 +4893,8 @@ packages:
   electron-publish@26.16.0:
     resolution: {integrity: sha512-Vt3KzQIiw9BImvNOYtndg9Mjki+tl4+1sQiC/+G5j8khWaENOJFWodiB+sUl6yyHwtd37avehskdtPw7f8y/+Q==}
 
-  electron-sparkle-updater@0.5.2:
-    resolution: {integrity: sha512-S7C35axw51hTYer9/TSx28/1QyAxARFJZHIDpXrTDM2owxAeGlqnvcPduzk4FJhNkEah1tF/f3ko21/r/TwvoQ==}
+  electron-sparkle-updater@0.5.3:
+    resolution: {integrity: sha512-mEN+cKZ+oujw/kDTc0XbToVg0dNNZVELttD0xuFo/v3tw8b0aocWF0phcW1XvpUTFHpr4HRApfT3H9QzJgZs5w==}
     engines: {node: '>=20.19'}
     hasBin: true
     peerDependencies:
@@ -9998,9 +9998,10 @@ snapshots:
       - '@types/react'
       - supports-color
 
-  '@lobehub/market-sdk@0.41.0(supports-color@9.4.0)(zod@4.6.5)':
+  '@lobehub/market-sdk@0.42.0(supports-color@9.4.0)(zod@4.6.5)':
     dependencies:
-      '@lobehub/market-types': 1.17.1
+      '@lobehub/market-types': 1.18.0
+      '@opentelemetry/api': 1.9.1
       debug: 4.4.3(supports-color@9.4.0)
       jose: 6.2.12
       url-join: 5.0.0
@@ -10009,6 +10010,10 @@ snapshots:
       - supports-color
 
   '@lobehub/market-types@1.17.1':
+    dependencies:
+      zod: 3.25.76
+
+  '@lobehub/market-types@1.18.0':
     dependencies:
       zod: 3.25.76
 
@@ -12782,7 +12787,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  electron-sparkle-updater@0.5.2(patch_hash=6f583444e425a99e21e374a9afab303612eb8255ee21194afdb77f347c6cc045)(electron@44.5.1(supports-color@9.4.0)):
+  electron-sparkle-updater@0.5.3(electron@44.5.1(supports-color@9.4.0)):
     dependencies:
       node-addon-api: 8.9.2
       node-gyp: 12.4.0

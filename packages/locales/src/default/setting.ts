@@ -4115,6 +4115,8 @@ When I am ___, I need ___
     'Could not read which instances are running right now',
   'environments.instances.inUse':
     'A conversation is using this instance — try again once that run ends',
+  'environments.instances.runningHint':
+    'A run is still using this instance — a conversation, a build, or the file browser. It is released on its own roughly 15 minutes after that run goes quiet; Run history shows which one is holding it.',
   'environments.instances.notBuilt': 'Not built yet — nothing has been cloned or installed',
   'environments.instances.rebuildConfirmContent':
     "This clears the instance's folder, then clones the code again and runs the setup script. Everything in it now — changes made in conversations, installed packages, reports, data — will be lost. This cannot be undone.",
