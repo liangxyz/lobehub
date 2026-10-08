@@ -1,11 +1,41 @@
+import { z } from 'zod';
+
 import type { LobeAgentChatConfig } from '../agent/chatConfig';
 import type { CreateThreadWithMessageParams } from '../aiChat';
-import type { DeviceUnavailableErrorData, WorkingDirConfig } from '../device';
+import type { DeviceUnavailableErrorData } from '../device';
+import { workingDirConfigSchema } from '../device';
 import type { TaskDetail, UIChatMessage } from '../message';
 import type { ChatTopic } from '../topic';
 
 export * from './credentialFacts';
 export * from './modelFacts';
+
+/**
+ * Metadata a client resolved before the topic existed, carried by the first
+ * send so the SERVER topic is born with it.
+ *
+ * The schema is the declaration and the type is derived from it, deliberately.
+ * Written as two independent declarations — an interface here and a
+ * `z.object()` at the router — they drift silently: `z.object()` strips keys it
+ * does not know, so a field added to the interface alone is dropped mid-flight
+ * and the call still answers 200.
+ */
+export const initialTopicMetadataSchema = z.object({
+  repos: z.array(z.string()).optional(),
+  /**
+   * Cloud-sandbox instance the composer chose before any topic existed. The
+   * choice is made on a conversation that has nothing to write to yet, so it
+   * travels with the first send instead — the server cannot read the client's
+   * pending selection, and without this the new topic would be born unbound and
+   * silently run at the workspace root.
+   */
+  sandboxInstanceId: z.string().optional(),
+  sandboxMode: z.enum(['ephemeral', 'persistent']).optional(),
+  workingDirectory: z.string().optional(),
+  workingDirectoryConfig: workingDirConfigSchema.optional(),
+});
+
+export type InitialTopicMetadata = z.infer<typeof initialTopicMetadataSchema>;
 
 export type AgentSignalOperationKind =
   'memory' | 'nightly-review' | 'self-feedback-intent' | 'self-reflection' | 'skill';
@@ -107,11 +137,7 @@ export interface ExecAgentAppContext {
    * Initial metadata to merge into the topic when a new topic is created for
    * this execution. Ignored when a topicId is already provided (existing topic).
    */
-  initialTopicMetadata?: {
-    repos?: string[];
-    workingDirectory?: string;
-    workingDirectoryConfig?: WorkingDirConfig;
-  };
+  initialTopicMetadata?: InitialTopicMetadata;
   /**
    * Whether this operation runs inside an isolation thread spawned by another
    * operation on the same topic (callAgent / callSubAgent / group member).
@@ -217,6 +243,52 @@ export interface ExecAgentLlmExecutor {
   clientId: string;
   /** Provider ids this client can reach directly. */
   providers: string[];
+}
+
+/**
+ * `ClientLlmExecutorUnavailable` reasons a client can still fix by showing up:
+ * the server parks the run in `waiting_for_client` for them instead of failing
+ * it (U4c), and owns what its assistant row shows.
+ */
+export const CLIENT_LLM_WAITABLE_REASONS: readonly string[] = [
+  'claim_timeout',
+  'no_executor',
+  'not_delivered',
+];
+
+/** Whether a (stream or persisted) error is one the server parks the run on. */
+export const isClientLlmWaitableError = (error: unknown): boolean => {
+  if (!error || typeof error !== 'object') return false;
+  const { body, type } = error as { body?: { reason?: unknown }; type?: unknown };
+  return (
+    type === 'ClientLlmExecutorUnavailable' &&
+    typeof body?.reason === 'string' &&
+    CLIENT_LLM_WAITABLE_REASONS.includes(body.reason)
+  );
+};
+
+/**
+ * A run parked in `waiting_for_client`: its next LLM call needs the user's
+ * device and no client took it. What a client needs to pick it up.
+ */
+export interface ClientLlmWaitItem {
+  agentId?: string;
+  /** Assistant row the resumed call fills. */
+  assistantMessageId?: string;
+  /** When the run stops waiting and ends with an error. */
+  expiresAt: string;
+  operationId: string;
+  /** The provider the client must be able to reach. */
+  provider: string;
+  threadId?: string;
+  topicId?: string;
+}
+
+/** What `resumeClientLlmWait` did; `resumed: false` once the run is no longer parked. */
+export interface ResumeClientLlmWaitResult {
+  assistantMessageId?: string;
+  resumed: boolean;
+  topicId?: string;
 }
 
 export interface ExecAgentParams {

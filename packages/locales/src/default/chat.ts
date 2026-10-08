@@ -619,6 +619,8 @@ export default {
   'heteroAgent.cliModel.defaultDesc': 'Use the default model configured in {{name}}',
   'heteroAgent.cliModel.empty': '{{name}} did not report any models.',
   'heteroAgent.cliModel.error': 'Could not load models from the CLI.',
+  'heteroAgent.cliModel.unsupportedConfiguration':
+    'Model discovery is unavailable for this CLI configuration. You can still use the current model.',
   'heteroAgent.cliModel.loading': 'Loading {{name}} models…',
   'heteroAgent.cliModel.noMatch': 'No models match your search.',
   'heteroAgent.cliModel.reload': 'Reload models',
@@ -721,7 +723,7 @@ export default {
     'Could not reconnect this device. Make sure the desktop app is running, then try again.',
   'heteroAgent.executionTarget.personalGroup': 'Private Devices',
   'heteroAgent.executionTarget.sandbox': 'Cloud Sandbox',
-  'heteroAgent.executionTarget.sandboxDesc': 'Run in an ephemeral cloud sandbox',
+  'heteroAgent.executionTarget.sandboxDesc': 'Runs in the cloud, no machine needed',
   'heteroAgent.executionTarget.workspaceGroup': 'Workspace Devices',
   'heteroAgent.executionTarget.downloadDesktop': 'Get Desktop App',
   'heteroAgent.executionTarget.downloadDesktopDesc': 'Run agents with access to your computer',
@@ -854,6 +856,15 @@ export default {
   'messageAction.regenerate': 'Regenerate',
   'messageAction.select': 'Select',
   'messageLink.openInSideBrowser': 'Open in side browser',
+  'clientLlmWait.title': 'Waiting for a LobeHub client to run {{provider}}',
+  'clientLlmWait.descHere':
+    'This run needs {{provider}}, which only your own device can reach. Continue it on this device, or it stops waiting at {{time}}.',
+  'clientLlmWait.descElsewhere':
+    'This run needs {{provider}}, which only your own device can reach. Open LobeHub on the device running {{provider}} and the run continues on its own. It stops waiting at {{time}}.',
+  'clientLlmWait.continue': 'Continue on this device',
+  'clientLlmWait.notWaiting':
+    'This run is no longer waiting. It may have been picked up by another device, stopped, or timed out.',
+  'clientLlmWait.continueFailed': 'Could not continue the run on this device. Try again.',
   'heteroRateLimit.cancelFailed':
     'Could not cancel the scheduled continuation. It may already be claimed or running. Refresh the conversation to check its status.',
   'messageForward.bar.cancel': 'Cancel',
@@ -1353,6 +1364,52 @@ export default {
   'gatewayMode.cardTitle': 'Agent Gateway Mode',
   'gatewayMode.desc':
     "Run agents in the cloud through LobeHub's Agent Gateway. Tasks keep running even after you close the page.",
+  'sandboxStorage.ephemeral': 'Temporary working directory',
+  'sandboxStorage.ephemeralDesc': 'Cleaned up when the sandbox is recycled',
+  'sandboxStorage.persistentUpsell': 'Persistent working directory',
+  'sandboxStorage.persistentUpsellDesc': 'Keep files across runs and topics',
+  'sandboxStorage.setUpEnvironmentDesc': 'A persistent directory lives in an environment',
+  'sandboxStorage.setUpEnvironment': 'Set up an environment',
+  // The other empty state: environments exist, none has been materialized
+  // into a working copy yet. Naming the environment page rather than opening
+  // a dialog here — this menu picks between instances, it does not make them.
+  'sandboxStorage.noInstances': 'Create an instance',
+  'sandboxStorage.noInstancesDesc': 'Your environments have no working copy yet',
+  'sandboxStorage.manage': 'Manage',
+  // The menu names the thing it picks — an instance of an environment —
+  // rather than the slot it fills. The explainer carries the distinction,
+  // because "environment" and "instance of one" is the whole model.
+  'sandboxStorage.pickerTitle': 'Environment Instance',
+  'sandboxStorage.pickerInfoTooltip':
+    'An environment describes what a run needs around it — repositories, setup, variables. An instance is one working copy of it, with its own folder and its own installed packages; conversations run inside an instance and keep what they leave there.',
+  'sandboxStorage.environmentsUnavailable': 'Environments could not be loaded',
+  // One conversation at a time per instance: the execution plane takes a
+  // lease and answers the second writer with 409 INSTANCE_IN_USE, because
+  // two runs snapshotting one folder means whichever ends last silently
+  // discards the other's work. The tag says which rows that applies to before
+  // the first message meets the refusal.
+  'sandboxStorage.running': 'Running',
+  // A build holds the same single-writer lease a run does, so it is refused
+  // for the same reason — but it is not a conversation, and saying "running"
+  // would send someone looking for one.
+  'sandboxStorage.building': 'Building',
+  'sandboxStorage.buildFailed': 'Not built',
+  'sandboxStorage.instanceBusy':
+    '{{name}} is running in another conversation. This one keeps it, and picks it up when that run ends.',
+  // Pool captions inside a workspace, in the execution-target menu's words:
+  // which pool an environment is in decides who else can reach what a run
+  // leaves behind. A personal account has one pool and needs neither.
+  'sandboxStorage.privateGroup': 'Private Environments',
+  'sandboxStorage.workspaceGroup': 'Workspace Environments',
+  // Says where the hidden ones went. Dropped from the list rather than
+  // dimmed, the way the execution-target menu drops a workspace agent's
+  // personal devices, so this is the only place they are accounted for.
+  'sandboxStorage.publicAgentHint_one':
+    '{{count}} private environment is hidden — a public agent can only use workspace environments. Publish it to use it here.',
+  'sandboxStorage.publicAgentHint_other':
+    '{{count}} private environments are hidden — a public agent can only use workspace environments. Publish one to use it here.',
+  'sandboxStorage.privateInstanceBlocked':
+    '“{{name}}” is in a private environment, which a public agent cannot use. This topic runs in a temporary working directory instead.',
   'search.grounding.imageSearchQueries': 'Image Search Keywords',
   'search.grounding.imageTitle': 'Found {{count}} images',
   'chatMode.agent': 'Agent',
@@ -1945,7 +2002,7 @@ export default {
     'Each round is one full agent run; its output, time and cost all hang off this goal.',
   'goalEmpty.step2.title': 'The agent runs a round on its own',
   'goalEmpty.step3.desc':
-    'Every check is judged one by one. All passed means achieved; anything needing your call stops at pending acceptance.',
+    'Every check is judged one by one. All passed means achieved; anything needing your call stops and asks you.',
   'goalEmpty.step3.title': 'Acceptance runs every round',
   'goalEmpty.title': 'Chase goals without limits',
   'goalList.acceptanceProgress': '{{passed}}/{{total}} passed',
@@ -1965,13 +2022,11 @@ export default {
   'goalList.status.error': 'Needs attention',
   'goalList.status.paused': 'Paused',
   'goalList.status.planning': 'Planning',
-  'goalList.status.review': 'Pending acceptance',
+  'goalList.status.review': 'Needs your decision',
   'goalList.status.running': 'Pursuing',
   'goalList.status.verifying': 'Verifying',
   'goalList.status.waiting': 'Waiting',
   'goalTask.checks': '{{passed}}/{{total}} checks passed',
-  'goalTask.currentStep': 'Current: {{title}}',
-  'goalTask.nextStep': 'Up next: {{title}}',
   'goalTask.round': 'Round {{current}}',
   'goalTask.roundWithBudget': 'Round {{current}}/{{total}}',
   'goalTask.tasksDone': '{{passed}}/{{total}} tasks done',
@@ -1979,11 +2034,18 @@ export default {
   'goalTask.status.canceled': 'Canceled',
   'goalTask.status.error': 'Needs attention',
   'goalTask.status.paused': 'Paused',
+  'goalTask.status.planning': 'Planning',
   'goalTask.status.repairing': 'Repairing',
-  'goalTask.status.review': 'Pending acceptance',
+  'goalTask.status.review': 'Needs your decision',
   'goalTask.status.running': 'Executing',
   'goalTask.status.verifying': 'Verifying',
   'goalTask.status.waiting': 'Waiting',
+  'goalTask.plan.drafting': 'Breaking the goal into tasks…',
+  'goalTask.stage.achieved': 'Achieve',
+  'goalTask.stage.executing': 'Execute',
+  'goalTask.stage.planning': 'Plan',
+  'goalTask.stage.verifying': 'Accept',
+  'goalTask.step.queued': 'Not started',
   'goalList.title': 'Goals',
   'goalDetail.acceptance': 'Acceptance checks',
   'goalAcceptance.add': 'Add criterion',
@@ -2142,6 +2204,7 @@ export default {
   'goalProcess.gate.decisionPointLabel': 'What needs your decision',
   'goalProcess.gate.title.recoverTask': 'Decide what happens to the failed task',
   'goalProcess.gate.title.goalAcceptance': 'Decide the goal acceptance outcome',
+  'goalProcess.gate.title.fixSetup': 'Fix the setup, then retry',
   'goalProcess.clarify.title': 'Clarify the goal before work starts',
   'goalProcess.clarify.description':
     'Answer these once and the agent plans with them. Skip to let it proceed on its own assumptions.',
@@ -2157,14 +2220,74 @@ export default {
   'goalProcess.gate.reason.attemptBudgetExhausted': 'The attempt budget for this work is used up',
   'goalProcess.gate.reason.costBudgetExhausted': 'The goal cost budget is used up',
   'goalProcess.gate.reason.recoveryFailed': 'Automatic recovery could not start the next attempt',
+  'goalProcess.gate.reason.deviceStayedOffline':
+    'The device this task runs on stayed offline through every automatic retry',
+  'goalProcess.gate.reason.setupWorkingDirectory':
+    'The working directory {{path}} does not exist on the device the agent runs on. Create it there, or point the agent at a directory that exists.',
+  'goalProcess.gate.reason.setupCli':
+    'The run could not start ({{error}}). Install the CLI on the device the agent runs on and make sure it is on PATH.',
+  'goalProcess.gate.reason.setupCredentials':
+    'The provider refused the run ({{error}}). Update the credentials, plan or model in the agent settings.',
+  'goalProcess.gate.reason.setupDevice':
+    'The device is unavailable ({{error}}). Reconnect it, or bind the agent to another online device.',
+  'goalProcess.gate.reason.setupGateway':
+    'The device gateway is not set up ({{error}}). Configure it on the server, or switch the agent to a connected local device.',
+  'goalProcess.gate.reason.quotaFarReset':
+    'The usage limit ({{error}}) does not reset until {{at}}, more than a day away. Switch the agent to another account or provider, or retry after the reset.',
+  'goalProcess.gate.reason.quotaRetriesSpent':
+    'Still over the usage limit ({{error}}) after {{count}} automatic retries over {{duration}}. Check the plan, or switch the agent to another account or provider.',
+  'goalProcess.gate.reason.transientRetriesSpent':
+    'The run failed the same way {{count}} times over {{duration}} ({{error}}). Check the device, its network and the agent gateway.',
   'goalProcess.gate.reason.runError': 'The run stopped with an error ({{code}})',
   'goalProcess.gate.recommended': 'recommended',
   'goalProcess.gate.noteLabel': 'Extra guidance',
   'goalProcess.gate.notePlaceholder': 'Optional — goes into the next attempt instructions',
   'goalProcess.gate.option.retry': 'Retry work',
+  'goalProcess.gate.option.fixedRetry': 'I fixed it — retry',
   'goalProcess.gate.option.retire': 'Retire work',
   'goalProcess.gate.option.fail': 'Fail goal',
   'goalProcess.gate.option.assume': 'Go with the assumption',
+  'goalProcess.decision.effect.fixedRetry': 'Run the task again once the setup is fixed.',
+  'goalProcess.decision.asks.judgment': 'needs your review on a stuck task',
+  'goalProcess.decision.asks.goalAcceptance': 'needs your review on the goal acceptance',
+  'goalProcess.decision.asks.agentQuestion': 'needs your review',
+  'goalProcess.decision.asks.machine': 'needs you to sort it out',
+  'goalProcess.decision.system': 'Run environment',
+  'goalProcess.decision.summary.judgment':
+    'It used up its automatic retries without passing acceptance. Decide whether it gets another attempt or is dropped.',
+  'goalProcess.decision.summary.machine':
+    'It could not run because of the run environment, not the work itself. Fix the environment, then retry.',
+  'goalProcess.decision.summary.goalAcceptance':
+    'The goal-level acceptance did not pass. Decide whether to run it again, abandon it, or record the goal as failed.',
+  'goalProcess.decision.summary.agentQuestion':
+    'While working on the goal, the main Agent hit a call only you can make. It lays out the options and its recommendation below.',
+  'goalProcess.decision.summary.thisTask': 'this task',
+  'goalProcess.decision.context.task': 'Task',
+  'goalProcess.decision.context.decision': 'Your call',
+  'goalProcess.decision.submit': 'Decide',
+  'goalProcess.decision.viewRun': 'Open task',
+  'goalProcess.decision.attempts_one': '{{count}} attempt',
+  'goalProcess.decision.attempts_other': '{{count}} attempts',
+  'goalProcess.decision.effect.retry':
+    'Send the task back for another attempt. Your note is written into its instructions.',
+  'goalProcess.decision.effect.retire': 'Drop this task. The goal moves on without it.',
+  'goalProcess.decision.effect.fail': 'End the goal and record it as failed.',
+  'goalProcess.decision.effect.retryAcceptance': 'Run the goal-level acceptance again.',
+  'goalProcess.decision.effect.abandonAcceptance':
+    'Stop acceptance and end the goal without a verdict.',
+  'goalProcess.signOff.islandSubtitle': 'is done and waiting for your sign-off',
+  'goalProcess.signOff.question': 'Do you accept what this goal delivered?',
+  'goalProcess.signOff.description': 'Goal-level acceptance passed. Your sign-off closes the goal.',
+  'goalProcess.signOff.accept': 'Sign off',
+  'goalProcess.signOff.acceptEffect': 'Close the goal as delivered.',
+  'goalProcess.signOff.requestChanges': 'Request changes',
+  'goalProcess.signOff.requestChangesEffect':
+    'Send it back to the Agent. Say what to change in the notes.',
+  'goalProcess.signOff.notePlaceholder':
+    'What should change? The Agent reworks the delivery with this.',
+  'goalProcess.signOff.accepted': 'Signed off',
+  'goalProcess.signOff.sentBack': 'Sent back for changes',
+  'goalProcess.gate.title.agentQuestion': "Answer the main Agent's question",
   'goalProcess.attempts.title': 'Previous attempts',
   'goalProcess.attempts.nth': 'Attempt {{index}}',
   'goalProcess.attempts.passed': 'Passed',
@@ -2449,17 +2572,35 @@ export default {
   'goalPage.filteredEmptyTitle': 'No goals in this view',
   'goalPage.filter.achieved': 'Completed',
   'goalPage.filter.all': 'All',
-  'goalPage.filter.review': 'Needs review',
+  'goalPage.filter.review': 'Needs you',
   'goalPage.filter.running': 'In progress',
   'goalPage.loadingProgress': 'Loading acceptance progress…',
   'goalPage.listTitle': 'Goal list',
   'goalPage.loadMore': 'Load more',
-  'goalPage.metrics.delivered': 'Delivered',
-  'goalPage.metrics.pursuing': 'Open',
+  'goalPage.metrics.delivered': 'Needs you',
+  'goalPage.metrics.pursuing': 'Others',
   'goalPage.metrics.total': 'Total goals',
   'goalPage.title': 'Overview',
   'goalPage.view.card': 'Cards',
   'goalPage.view.list': 'List',
+  'goalTurn.authorUser': 'User',
+  'goalTurn.continuation': 'Why planning reopened',
+  'goalTurn.earlierFeedback': 'Earlier feedback ({{count}})',
+  'goalTurn.instruction': 'Instructions for the planning agent',
+  'goalTurn.newFeedback': 'New feedback ({{count}})',
+  'goalTurn.omitted': '{{count}} more comments not shown',
+  'goalTurn.outcome.never_started': 'Previous turn never started',
+  'goalTurn.outcome.no_plan': 'Previous turn exited without a plan',
+  'goalTurn.outcome.submitted': 'Previous turn submitted {{action}}',
+  'goalTurn.problem': 'Problem handed over',
+  'goalTurn.requirement': 'Goal requirement',
+  'goalTurn.showAll': 'Show all',
+  'goalTurn.showLess': 'Show less',
+  'goalTurn.title': 'Goal planning · Turn {{turn}}/{{max}}',
+  'goalTurn.trigger.continuation': 'Replanning',
+  'goalTurn.trigger.first': 'First turn',
+  'goalTurn.trigger.settled': 'Work settled',
+  'goalTurn.trigger.takeover': 'Takeover',
   'taskList.activeTasks': 'Active Tasks',
   'taskList.all': 'All tasks',
   'taskList.visibility.all': 'All',
@@ -3198,6 +3339,8 @@ export default {
   'workingPanel.skills.section.project': 'Project skills',
   'workingPanel.skills.section.user': 'User skills',
   'workingPanel.skills.title': 'Skills',
+  'workingPanel.files.openNeedsTopic':
+    'Send a message first — this environment’s files open once the conversation has a session.',
   'workingPanel.files.copyAbsolutePath': 'Copy Path',
   'workingPanel.files.copyRelativePath': 'Copy Relative Path',
   'workingPanel.files.actions.copy': 'Copy',
@@ -3252,6 +3395,8 @@ export default {
   'workingPanel.files.validation.whitespace': "Names can't start or end with a space",
   'workingPanel.files.collapseAll': 'Collapse Folders in Explorer',
   'workingPanel.files.empty': 'No files in this workspace',
+  'workingPanel.files.unreadable':
+    "Couldn't read this workspace — it may not exist yet, or the listing failed",
   'workingPanel.files.filters.changedOnly': 'Show Git Changes Only',
   'workingPanel.files.filters.hideIgnored': 'Exclude Ignored Files',
   'workingPanel.files.filters.title': 'Filter Files',

@@ -1,5 +1,6 @@
 import type { AgentState } from '@lobechat/agent-runtime';
 import { BUILTIN_AGENT_SLUGS } from '@lobechat/builtin-agents';
+import type { SandboxStorageClaim } from '@lobechat/builtin-tool-cloud-sandbox';
 import type { LobeChatDatabase } from '@lobechat/database';
 import type {
   ExecAgentResult,
@@ -76,6 +77,7 @@ import { dispatchHeteroAgent } from './pipeline/heteroDispatch';
 import { buildOperationInitRequest, runOperationInit } from './pipeline/operationInit';
 import { createHistoryMessagesLoader } from './pipeline/operationPrep';
 import { resolveRunAgentConfig } from './pipeline/resolveRunAgentConfig';
+import { traceSendStage } from './pipeline/sendTracing';
 import { startOperation } from './pipeline/startOperation';
 import { resolveNewTopicSnapshot, setupTurn } from './pipeline/turnSetup';
 import { createRunFacts, type RunFacts } from './runFacts';
@@ -218,8 +220,11 @@ export class AiAgentService {
     };
   }
 
-  private async getMarketService(runFacts?: RunFacts): Promise<MarketService> {
-    if (this._marketService) return this._marketService;
+  private async getMarketService(
+    runFacts?: RunFacts,
+    options?: { sandboxStorage: SandboxStorageClaim },
+  ): Promise<MarketService> {
+    if (!options && this._marketService) return this._marketService;
 
     // The turn's fact reader already holds this row when a run is underway
     // (`execAgent` asks it for the memory / timezone settings too); callers
@@ -229,6 +234,21 @@ export class AiAgentService {
       runFacts ? runFacts.userSettings() : new UserModel(this.db, this.userId).getUserSettings()
     ).catch(() => undefined);
     const accessToken = (settings?.market as any)?.accessToken;
+
+    // A sandbox-workspace claim is signed into the trust token, so a service
+    // carrying one is built for that run and kept out of the shared cache.
+    if (options) {
+      return new MarketService({
+        accessToken,
+        userInfo: {
+          sandboxStorage: options.sandboxStorage,
+          userId: this.userId,
+          // The claim resolves against the workspace's mirrored organization,
+          // not the member's personal account, so the scope has to travel with it.
+          workspaceId: this.workspaceId,
+        },
+      });
+    }
 
     this._marketService = new MarketService({
       accessToken,
@@ -340,6 +360,18 @@ export class AiAgentService {
    */
   executeStep(params: AgentExecutionParams): Promise<AgentExecutionResult> {
     return this.agentRuntimeService.executeStep(params);
+  }
+
+  /** Continue a run parked in `waiting_for_client` (see AgentRuntimeService). */
+  resumeFromClientLlmWait(
+    params: Parameters<AgentRuntimeService['resumeFromClientLlmWait']>[0],
+  ): ReturnType<AgentRuntimeService['resumeFromClientLlmWait']> {
+    return this.agentRuntimeService.resumeFromClientLlmWait(params);
+  }
+
+  /** Runs of this user parked in `waiting_for_client`. */
+  listClientLlmWaits(providers?: string[]): ReturnType<AgentRuntimeService['listClientLlmWaits']> {
+    return this.agentRuntimeService.listClientLlmWaits(providers);
   }
 
   /** Mint a lock owner that spans a whole inline step loop. */
@@ -1035,24 +1067,26 @@ export class AiAgentService {
       memberDeviceOverride,
       persistAgentId,
       resolvedAgentId,
-    } = await resolveRunAgentConfig(
-      {
-        db: this.db,
-        resolveAgentConfigOrThrow: (id) => this.resolveAgentConfigOrThrow(id),
-        userId: this.userId,
-        workspaceId: this.workspaceId,
-      },
-      {
-        appContext,
-        chatConfigOverride,
-        identifier,
-        instructions,
-        modelOverride,
-        providerOverride,
-        shareVisitorUserId: shareGate?.visitorUserId,
-        throwIfExecutionAborted,
-        toolModeOverride,
-      },
+    } = await traceSendStage('agent_config', () =>
+      resolveRunAgentConfig(
+        {
+          db: this.db,
+          resolveAgentConfigOrThrow: (id) => this.resolveAgentConfigOrThrow(id),
+          userId: this.userId,
+          workspaceId: this.workspaceId,
+        },
+        {
+          appContext,
+          chatConfigOverride,
+          identifier,
+          instructions,
+          modelOverride,
+          providerOverride,
+          shareVisitorUserId: shareGate?.visitorUserId,
+          throwIfExecutionAborted,
+          toolModeOverride,
+        },
+      ),
     );
 
     // Share-visitor runs must never see the creator's files/knowledge bases.
@@ -1128,19 +1162,21 @@ export class AiAgentService {
       approvedToolEntries,
       batchApprovalAnchorId,
       resumeApprovalPlugin,
-    } = await claimApprovalResume(
-      { messageModel: this.messageModel },
-      {
-        appContext,
-        approvalClaim,
-        approvalDecisions,
-        parentMessageId,
-        providedApprovalResolutionRequestId,
-        providedApprovalSourceOperationId,
-        resumeApprovals,
-        resumeParentMessage,
-        resumeToolResult,
-      },
+    } = await traceSendStage('approval_claim', () =>
+      claimApprovalResume(
+        { messageModel: this.messageModel },
+        {
+          appContext,
+          approvalClaim,
+          approvalDecisions,
+          parentMessageId,
+          providedApprovalResolutionRequestId,
+          providedApprovalSourceOperationId,
+          resumeApprovals,
+          resumeParentMessage,
+          resumeToolResult,
+        },
+      ),
     );
 
     // Deterministic continuation identity for a generic (v2) approval claim.
@@ -1186,45 +1222,47 @@ export class AiAgentService {
     // Stage 3 + shared turn setup — topic creation/reuse (with the pinned
     // model), device-access policy, hetero detection, attachment ingestion, and
     // the persisted user/assistant rows (see `pipeline/turnSetup`).
-    const turn = await setupTurn(
-      {
-        db: this.db,
-        messageModel: this.messageModel,
-        topicModel: this.topicModel,
-        userId: this.userId,
-        workspaceId: this.workspaceId,
-      },
-      {
-        agentConfig,
-        agentSlug,
-        appContext,
-        assistantAgentId,
-        attachedFileIds,
-        batchApprovalAnchorId,
-        botContext,
-        botSender,
-        clientIds,
-        continuationAssistantId,
-        conversationAgentId,
-        createdThreadId,
-        externalOrigin,
-        cronJobId,
-        files,
-        modelOverride,
-        operationTaskId,
-        parentMessageId,
-        prompt,
-        providerOverride,
-        requestedDeviceId,
-        resolvedAgentId,
-        resume,
-        runFromHistory,
-        shareGate,
-        steer,
-        throwIfExecutionAborted,
-        title,
-        trigger,
-      },
+    const turn = await traceSendStage('turn_setup', () =>
+      setupTurn(
+        {
+          db: this.db,
+          messageModel: this.messageModel,
+          topicModel: this.topicModel,
+          userId: this.userId,
+          workspaceId: this.workspaceId,
+        },
+        {
+          agentConfig,
+          agentSlug,
+          appContext,
+          assistantAgentId,
+          attachedFileIds,
+          batchApprovalAnchorId,
+          botContext,
+          botSender,
+          clientIds,
+          continuationAssistantId,
+          conversationAgentId,
+          createdThreadId,
+          externalOrigin,
+          cronJobId,
+          files,
+          modelOverride,
+          operationTaskId,
+          parentMessageId,
+          prompt,
+          providerOverride,
+          requestedDeviceId,
+          resolvedAgentId,
+          resume,
+          runFromHistory,
+          shareGate,
+          steer,
+          throwIfExecutionAborted,
+          title,
+          trigger,
+        },
+      ),
     );
     assistantMessageRef.current = turn.assistantMessageId;
     const {
@@ -1279,7 +1317,7 @@ export class AiAgentService {
         {
           bindTopicWorkingDirectory: (p) => this.bindTopicWorkingDirectory(p),
           db: this.db,
-          getMarketService: () => this.getMarketService(runFacts),
+          getMarketService: (options) => this.getMarketService(runFacts, options),
           messageModel: this.messageModel,
           resolveDeviceWorkspaceId: (deviceId) => this.resolveDeviceWorkspaceId(deviceId),
           topicModel: this.topicModel,
@@ -1317,43 +1355,45 @@ export class AiAgentService {
     let globalMemoryEnabled = agentMemoryEnabled ?? false;
     let enableExpertise = false;
     let userTimezone: string | undefined;
-    try {
-      const settings = await runFacts.userSettings();
-      const memorySettings = settings?.memory as { enabled?: boolean } | undefined;
+    await traceSendStage('run_settings', async () => {
+      try {
+        const settings = await runFacts.userSettings();
+        const memorySettings = settings?.memory as { enabled?: boolean } | undefined;
 
-      globalMemoryEnabled = agentMemoryEnabled ?? memorySettings?.enabled !== false;
+        globalMemoryEnabled = agentMemoryEnabled ?? memorySettings?.enabled !== false;
 
-      // Timezone drives the session-date placeholder rendered back to whoever
-      // is actually conversing. In a share-visitor run that is the VISITOR,
-      // not the creator whose settings this block otherwise reads — memory /
-      // expertise intentionally stay creator-scoped below (gated by
-      // `allowReadMemory`), but the timezone has no such gate and must not
-      // leak the creator's own setting into a visitor's turn.
-      if (shareGate) {
-        const visitorSettings = await runFacts.userSettings(shareGate.visitorUserId);
-        const visitorGeneralSettings = visitorSettings?.general as
-          { timezone?: string } | undefined;
-        userTimezone = visitorGeneralSettings?.timezone;
-      } else {
-        const generalSettings = settings?.general as { timezone?: string } | undefined;
-        userTimezone = generalSettings?.timezone;
+        // Timezone drives the session-date placeholder rendered back to whoever
+        // is actually conversing. In a share-visitor run that is the VISITOR,
+        // not the creator whose settings this block otherwise reads — memory /
+        // expertise intentionally stay creator-scoped below (gated by
+        // `allowReadMemory`), but the timezone has no such gate and must not
+        // leak the creator's own setting into a visitor's turn.
+        if (shareGate) {
+          const visitorSettings = await runFacts.userSettings(shareGate.visitorUserId);
+          const visitorGeneralSettings = visitorSettings?.general as
+            { timezone?: string } | undefined;
+          userTimezone = visitorGeneralSettings?.timezone;
+        } else {
+          const generalSettings = settings?.general as { timezone?: string } | undefined;
+          userTimezone = generalSettings?.timezone;
+        }
+      } catch (error) {
+        log('execAgent: failed to fetch user settings: %O', error);
       }
-    } catch (error) {
-      log('execAgent: failed to fetch user settings: %O', error);
-    }
-    try {
-      const preference = await new UserModel(this.db, this.userId).getUserPreference();
-      enableExpertise = preference?.lab?.enableSelfLearning === true;
-    } catch (error) {
-      console.error('Failed to resolve expertise injection Lab preference:', error);
-    }
-    // Share visitors only get the creator's memory (persona + learned
-    // expertise) when the share explicitly allows it — both surfaces would
-    // otherwise leak the creator's personal context into visitor turns.
-    if (shareGate && !shareGate.shareConfig.allowReadMemory) {
-      globalMemoryEnabled = false;
-      enableExpertise = false;
-    }
+      try {
+        const preference = await new UserModel(this.db, this.userId).getUserPreference();
+        enableExpertise = preference?.lab?.enableSelfLearning === true;
+      } catch (error) {
+        console.error('Failed to resolve expertise injection Lab preference:', error);
+      }
+      // Share visitors only get the creator's memory (persona + learned
+      // expertise) when the share explicitly allows it — both surfaces would
+      // otherwise leak the creator's personal context into visitor turns.
+      if (shareGate && !shareGate.shareConfig.allowReadMemory) {
+        globalMemoryEnabled = false;
+        enableExpertise = false;
+      }
+    });
     log(
       'execAgent: globalMemoryEnabled=%s, timezone=%s',
       globalMemoryEnabled,
@@ -1432,26 +1472,28 @@ export class AiAgentService {
       topicBoundDeviceId: turn.topicBoundDeviceId,
     });
 
-    const { discovery, initialContext, prep } = await runOperationInit(
-      {
-        agentDocumentsService: this.agentDocumentsService,
-        agentModel: this.agentModel,
-        bindTopicWorkingDirectory: (p) => this.bindTopicWorkingDirectory(p),
-        composioService: this.composioService,
-        connectorModel: this.connectorModel,
-        connectorToolModel: this.connectorToolModel,
-        db: this.db,
-        getMarketService: () => this.getMarketService(runFacts),
-        loadHistoryMessages,
-        messageModel: this.messageModel,
-        pluginModel: this.pluginModel,
-        throwIfExecutionAborted,
-        topicModel: this.topicModel,
-        userId: this.userId,
-        workspaceId: this.workspaceId,
-      },
-      runContext,
-      initRequest,
+    const { discovery, initialContext, prep } = await traceSendStage('operation_init', () =>
+      runOperationInit(
+        {
+          agentDocumentsService: this.agentDocumentsService,
+          agentModel: this.agentModel,
+          bindTopicWorkingDirectory: (p) => this.bindTopicWorkingDirectory(p),
+          composioService: this.composioService,
+          connectorModel: this.connectorModel,
+          connectorToolModel: this.connectorToolModel,
+          db: this.db,
+          getMarketService: () => this.getMarketService(runFacts),
+          loadHistoryMessages,
+          messageModel: this.messageModel,
+          pluginModel: this.pluginModel,
+          throwIfExecutionAborted,
+          topicModel: this.topicModel,
+          userId: this.userId,
+          workspaceId: this.workspaceId,
+        },
+        runContext,
+        initRequest,
+      ),
     );
 
     // 17. Log final operation parameters summary
@@ -1506,55 +1548,57 @@ export class AiAgentService {
 
     // 19. Create the operation via AgentRuntimeService, persist the reconnect
     // marker, and mint the gateway token (see `pipeline/startOperation`).
-    return startOperation(
-      {
-        agentRuntimeService: this.agentRuntimeService,
-        messageModel: this.messageModel,
-        retirePendingApprovalOperation: (opId) => this.retirePendingApprovalOperation(opId),
-        topicModel: this.topicModel,
-        userId: this.userId,
-        withholdGatewayToken: this.withholdGatewayToken,
-        workspaceId: this.workspaceId,
-      },
-      runContext,
-      {
-        acceptsMemberRuntimeEnd: params.acceptsMemberRuntimeEnd,
-        approvalClaim,
-        approvalSourceOperationId,
-        approvalSourceToolMessageIds,
-        autoStart,
-        onOperationCreated: params.onOperationCreated,
-        botContext,
-        botPlatformContext,
-        clientIp,
-        disabledPluginIds,
-        discordContext,
-        discovery,
-        enableExpertise,
-        evalContext,
-        evalRuntime,
-        hooks,
-        initialContext,
-        initialStepCount,
-        maxSteps,
-        operationId,
-        operationTaskId,
-        parentOperationId,
-        prep,
-        providedApprovalResolutionRequestId,
-        queueRetries,
-        queueRetryDelay,
-        signal,
-        stream,
-        clientProtocol: params.clientProtocol,
-        includeFinalState: params.includeFinalState,
-        llmExecutor: params.llmExecutor,
-        topicStartOwnerOperationId: params.topicStartOwnerOperationId,
-        updateAbortedAssistantMessage,
-        userAgent,
-        userInterventionConfig,
-        userTimezone,
-      },
+    return traceSendStage('start_operation', () =>
+      startOperation(
+        {
+          agentRuntimeService: this.agentRuntimeService,
+          messageModel: this.messageModel,
+          retirePendingApprovalOperation: (opId) => this.retirePendingApprovalOperation(opId),
+          topicModel: this.topicModel,
+          userId: this.userId,
+          withholdGatewayToken: this.withholdGatewayToken,
+          workspaceId: this.workspaceId,
+        },
+        runContext,
+        {
+          acceptsMemberRuntimeEnd: params.acceptsMemberRuntimeEnd,
+          approvalClaim,
+          approvalSourceOperationId,
+          approvalSourceToolMessageIds,
+          autoStart,
+          onOperationCreated: params.onOperationCreated,
+          botContext,
+          botPlatformContext,
+          clientIp,
+          disabledPluginIds,
+          discordContext,
+          discovery,
+          enableExpertise,
+          evalContext,
+          evalRuntime,
+          hooks,
+          initialContext,
+          initialStepCount,
+          maxSteps,
+          operationId,
+          operationTaskId,
+          parentOperationId,
+          prep,
+          providedApprovalResolutionRequestId,
+          queueRetries,
+          queueRetryDelay,
+          signal,
+          stream,
+          clientProtocol: params.clientProtocol,
+          includeFinalState: params.includeFinalState,
+          llmExecutor: params.llmExecutor,
+          topicStartOwnerOperationId: params.topicStartOwnerOperationId,
+          updateAbortedAssistantMessage,
+          userAgent,
+          userInterventionConfig,
+          userTimezone,
+        },
+      ),
     );
   }
 

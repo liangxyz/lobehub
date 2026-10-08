@@ -37,7 +37,7 @@ import {
   goalNodes,
   goalNodeWorkVersions,
 } from '../schemas/goalGraph';
-import { tasks } from '../schemas/task';
+import { briefs, tasks } from '../schemas/task';
 import { works, workVersions } from '../schemas/work';
 import type { LobeChatDatabase, Transaction } from '../type';
 import { notTrashed } from '../utils/softDelete';
@@ -77,6 +77,27 @@ interface CreateDecisionInput {
 }
 
 /** Persistence boundary for an owned Goal Graph and its append-only audit trail. */
+/**
+ * A goal gate is asked in two places — the goal itself and the brief that
+ * carries it to the inbox. Whichever answers, the other must stop asking, so
+ * every write that settles a decision settles its brief in the same transaction.
+ */
+const settleDecisionBriefs = async (
+  tx: Transaction,
+  decisionId: string,
+  action: string,
+  comment?: string,
+) =>
+  tx
+    .update(briefs)
+    .set({ resolvedAction: action, resolvedAt: new Date(), resolvedComment: comment ?? null })
+    .where(
+      and(
+        isNull(briefs.resolvedAt),
+        sql`${briefs.metadata} -> 'goal' ->> 'decisionId' = ${decisionId}`,
+      ),
+    );
+
 export class GoalGraphModel {
   /**
    * `actor` is who the audit trail records for the transitions made through this
@@ -288,6 +309,27 @@ export class GoalGraphModel {
       eventType,
       goalId,
       reason: reason ?? `status ${from} → ${to}`,
+    });
+  };
+
+  /**
+   * Record a change to the goal row itself that is not a status move, such as
+   * binding it to a topic, so the goal's timeline says when and by whom
+   * its carrier changed.
+   */
+  recordGoalUpdate = async (
+    goalId: string,
+    input: { operationId?: string; reason: string },
+  ): Promise<void> => {
+    await this.db.insert(goalEvents).values({
+      actorId: this.actor?.id ?? this.userId,
+      actorType: this.actor?.type ?? 'user',
+      entityId: goalId,
+      entityType: 'goal',
+      eventType: 'updated',
+      goalId,
+      operationId: input.operationId,
+      reason: input.reason,
     });
   };
 
@@ -804,6 +846,7 @@ export class GoalGraphModel {
         eventType: 'resolved',
         reason: resolution,
       });
+      await settleDecisionBriefs(tx, decision.id, optionId, resolution);
       return decision;
     });
 
@@ -847,6 +890,7 @@ export class GoalGraphModel {
         eventType: 'retired',
         reason,
       });
+      await settleDecisionBriefs(tx, decision.id, 'canceled', reason);
       return decision;
     });
 }

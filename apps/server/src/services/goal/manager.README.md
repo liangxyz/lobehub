@@ -11,6 +11,22 @@ creates to a dedicated executor; without it the goal agent does its own Tasks.
 `lh goal set-agent` hands supervision to another agent; `lh goal set-task-agent`
 changes the executor. Neither replaces the other.
 
+`lh goal bind-topic <goal-id> [--force] [--goal-only]`, run inside an agent
+topic, attaches an existing goal to that topic and leaves it where
+`lh goal create --topic` would have: the topic's agent is the goal
+agent (unfinished Tasks follow as with `set-agent`), the topic is the
+goal's `topic` subject, `config.manager` exists (an existing policy is kept), and
+`managerState.topicId` is the topic, so later planning turns are
+dispatched there. Graph, Tasks, budgets and status are untouched. The binding run
+is adopted as a planning turn (and prints its `--token`) only when nothing is in
+flight — no unsettled turn and no unfinished Task — because an adopted turn holds
+task coordination until it settles. A goal bound to another topic or task
+needs `--force`; the previous topic joins `previousTopicIds`, and the move is
+recorded as a goal event. Finished goals and goals with a planning turn in flight
+elsewhere are refused. Like `create --topic`, the topic comes from
+the run's operation; an operation-token run (device or gateway) needs the
+`goal:manage` capability that `/goal` grants.
+
 The main Agent must have a working shell and an authenticated `lh` CLI in its
 execution environment (for example a configured device Kimi/Codex Agent). Its
 normal Agent configuration selects the runtime; dispatch uses the same
@@ -121,7 +137,24 @@ Read `config.managerState` in the Goal graph for the current receipt and Topic.
 
 Wakeups use the existing Goal scheduler (queued mode for restart durability).
 After a confirmed terminal main operation without a plan, another turn can
-reread the durable graph within the turn budget. An unconfirmed running/missing
+reread the durable graph within the turn budget. A turn that ended in an error
+gates the next one through `managerState.retryAfter`. The error is classified by
+`classifyRunFailure` (`recoveryPolicy.ts`), the same classifier Task recovery
+uses:
+
+- A quota rejection that reports its reset, such as an external Agent's session
+  limit, waits for that reset. The refused turn is not charged to the budget.
+- A device that cannot be reached follows the Task offline schedule: 30 minutes,
+  doubling to 8 hours, over six retries. These turns are not charged, and seeing
+  the device online again ends the wait early. When the schedule runs out, the
+  Goal pauses.
+- Credentials, spend, permission or configuration errors pause the Goal at once.
+- Anything else backs off exponentially from one minute up to 30 minutes and is
+  charged. Five such turns in a row pause the Goal on the last error.
+
+A pause clears these streaks, so resuming starts a fresh schedule. Before this, a
+failing Agent was re-dispatched on every tick and spent the whole turn budget in
+minutes. An unconfirmed running/missing
 operation times out after 20 minutes and pauses without launching a replacement;
 confirm its exit before resuming. Parked human/async-tool operations retain
 ownership; a human wait is surfaced without starting another planning turn.
