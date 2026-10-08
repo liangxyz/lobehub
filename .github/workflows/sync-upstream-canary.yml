@@ -1,4 +1,4 @@
-name: Sync Upstream Canary & Publish Docker
+name: Sync Upstream Releases & Publish Docker
 
 on:
   schedule:
@@ -20,6 +20,7 @@ jobs:
       should_publish: ${{ steps.sync.outputs.should_publish }}
       target_tag: ${{ steps.check.outputs.target_tag }}
       normalized_version: ${{ steps.check.outputs.normalized_version }}
+      channel: ${{ steps.check.outputs.channel }}
       synced_sha: ${{ steps.sync.outputs.synced_sha }}
     steps:
       - name: Checkout canary
@@ -33,7 +34,7 @@ jobs:
         with:
           node-version: 22
 
-      - name: Check for new upstream canary release
+      - name: Check for new upstream release (stable or canary)
         id: check
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -77,7 +78,7 @@ jobs:
     with:
       tag: ${{ needs.check-and-sync.outputs.normalized_version }}
       commit_sha: ${{ needs.check-and-sync.outputs.synced_sha }}
-      channel: 'canary'
+      channel: ${{ needs.check-and-sync.outputs.channel }}
     secrets: inherit
 
   record-success:
@@ -114,7 +115,7 @@ jobs:
           node .github/scripts/check-upstream-canary.mjs record "${TARGET_TAG}" "${SYNCED_SHA}"
 
           git add .github/upstream-canary-state.json
-          git commit -m "chore: record published upstream canary ${TARGET_TAG} [skip ci]"
+          git commit -m "chore: record published upstream release ${TARGET_TAG} [skip ci]"
 
           # Create or verify tag on SYNCED_SHA
           if git rev-parse "refs/tags/${TARGET_TAG}" >/dev/null 2>&1; then

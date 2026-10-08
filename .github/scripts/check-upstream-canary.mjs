@@ -12,8 +12,8 @@ export function normalizeVersion(tag) {
 }
 
 /**
- * Validates and parses a canary tag string (e.g. "v2.2.19-canary.39" or "2.2.19-canary.39").
- * Excludes nightly, pr, and test tags.
+ * Validates and parses a canary tag string (strictly canary format, e.g. "v2.2.19-canary.39").
+ * Excludes stable, nightly, pr, and test tags.
  * @param {string} tag
  * @returns {{ valid: boolean, raw: string, normalized: string, version: string, canaryNum: number } | null}
  */
@@ -21,7 +21,6 @@ export function parseCanaryTag(tag) {
   if (!tag || typeof tag !== 'string') return null;
   const trimmed = tag.trim();
 
-  // Must match semantic version with -canary.X
   const match = trimmed.match(/^v?(\d+\.\d+\.\d+)-canary\.(\d+)$/);
   if (!match) return null;
 
@@ -31,6 +30,39 @@ export function parseCanaryTag(tag) {
     normalized: normalizeVersion(trimmed),
     version: match[1],
     canaryNum: parseInt(match[2], 10),
+  };
+}
+
+/**
+ * Validates and parses a release tag string.
+ * Supports:
+ * - Stable releases: "v2.2.19" or "2.2.19" (channel: 'stable')
+ * - Canary releases: "v2.2.19-canary.39" or "2.2.19-canary.39" (channel: 'canary')
+ * Excludes: nightly, pr, and draft tags.
+ * @param {string} tag
+ * @returns {{ valid: boolean, raw: string, normalized: string, version: string, isCanary: boolean, canaryNum: number | null, channel: 'stable' | 'canary' } | null}
+ */
+export function parseReleaseTag(tag) {
+  if (!tag || typeof tag !== 'string') return null;
+  const trimmed = tag.trim();
+
+  // Match semantic version with optional -canary.X
+  const match = trimmed.match(/^v?(\d+\.\d+\.\d+)(?:-canary\.(\d+))?$/);
+  if (!match) return null;
+
+  const version = match[1];
+  const isCanary = typeof match[2] !== 'undefined';
+  const canaryNum = isCanary ? parseInt(match[2], 10) : null;
+  const channel = isCanary ? 'canary' : 'stable';
+
+  return {
+    valid: true,
+    raw: trimmed,
+    normalized: normalizeVersion(trimmed),
+    version,
+    isCanary,
+    canaryNum,
+    channel,
   };
 }
 
@@ -45,7 +77,28 @@ export function isValidSha(sha) {
 }
 
 /**
- * Compares two canary releases to sort in descending order (newest first).
+ * Compares two stable releases (newest first).
+ * Returns negative if a is newer than b, positive if b is newer than a, 0 if equal.
+ */
+export function compareStableTags(aTag, bTag) {
+  const a = parseReleaseTag(aTag);
+  const b = parseReleaseTag(bTag);
+  if (!a && !b) return 0;
+  if (!a) return 1;
+  if (!b) return -1;
+
+  const aParts = a.version.split('.').map(Number);
+  const bParts = b.version.split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    if (aParts[i] !== bParts[i]) {
+      return bParts[i] - aParts[i];
+    }
+  }
+  return 0;
+}
+
+/**
+ * Compares two canary releases (newest first).
  * Returns negative if a is newer than b, positive if b is newer than a, 0 if equal.
  */
 export function compareCanaryTags(aTag, bTag) {
@@ -55,7 +108,6 @@ export function compareCanaryTags(aTag, bTag) {
   if (!a) return 1;
   if (!b) return -1;
 
-  // Compare semantic version parts
   const aParts = a.version.split('.').map(Number);
   const bParts = b.version.split('.').map(Number);
   for (let i = 0; i < 3; i++) {
@@ -64,13 +116,12 @@ export function compareCanaryTags(aTag, bTag) {
     }
   }
 
-  // Compare canary number
-  return b.canaryNum - a.canaryNum;
+  return (b.canaryNum ?? 0) - (a.canaryNum ?? 0);
 }
 
 /**
  * Filters a list of GitHub release objects for valid canary releases.
- * Requires: non-draft, non-prerelease PR builds, valid published_at, valid canary tag.
+ * Provided for backward compatibility.
  * @param {Array<object>} releases
  * @returns {Array<object>} Filtered and sorted descending by release semver
  */
@@ -84,9 +135,7 @@ export function filterCanaryReleases(releases) {
       if (!r.published_at || typeof r.published_at !== 'string') return false;
       if (!r.tag_name || typeof r.tag_name !== 'string') return false;
 
-      // Must be a valid canary tag
-      const parsed = parseCanaryTag(r.tag_name);
-      return parsed !== null;
+      return parseCanaryTag(r.tag_name) !== null;
     })
     .sort((a, b) => compareCanaryTags(a.tag_name, b.tag_name));
 }
@@ -145,83 +194,184 @@ export async function fetchPaginatedReleases(initialUrl, headers, fetchFn = fetc
 }
 
 /**
- * Determines whether a sync and publish should occur.
- * @param {object} params
- * @param {object|null} params.latestCanaryRelease
- * @param {object|null} params.lastRecordedState
- * @returns {{ shouldSync: boolean, reason: string, tag: string, normalizedVersion: string }}
+ * Filters and categorizes releases into stable and canary lists.
+ * Requires: non-draft, non-empty tag, valid published_at ISO string.
+ * @param {Array<object>} releases
+ * @returns {{ latestStable: object | null, latestCanary: object | null }}
  */
-export function shouldSync({
-  latestCanaryRelease,
-  lastRecordedState,
-}) {
-  if (!latestCanaryRelease) {
-    return {
-      shouldSync: false,
-      reason: 'no-valid-upstream-canary-found',
-      tag: '',
-      normalizedVersion: '',
-    };
-  }
+export function categorizeReleases(releases) {
+  if (!Array.isArray(releases)) return { latestStable: null, latestCanary: null };
 
-  const tag = latestCanaryRelease.tag_name;
-  const parsed = parseCanaryTag(tag);
-  if (!parsed) {
-    return {
-      shouldSync: false,
-      reason: `invalid-canary-tag: ${tag}`,
-      tag: '',
-      normalizedVersion: '',
-    };
-  }
-  const normalizedVersion = parsed.normalized;
+  const validReleases = releases.filter((r) => {
+    if (!r || typeof r !== 'object') return false;
+    if (r.draft === true) return false;
+    if (!r.published_at || typeof r.published_at !== 'string' || isNaN(new Date(r.published_at).getTime())) return false;
+    if (!r.tag_name || typeof r.tag_name !== 'string') return false;
 
-  const lastPublishedTag = lastRecordedState?.lastPublishedTag || '';
-  if (!lastPublishedTag) {
-    return {
-      shouldSync: true,
-      reason: 'initial-sync',
-      tag,
-      normalizedVersion,
-    };
-  }
+    const parsed = parseReleaseTag(r.tag_name);
+    if (!parsed) return false;
 
-  const cmp = compareCanaryTags(tag, lastPublishedTag);
-  if (cmp === 0) {
-    return {
-      shouldSync: false,
-      reason: 'already-published',
-      tag,
-      normalizedVersion,
-    };
-  } else if (cmp > 0) {
-    // tag is older than lastPublishedTag -> downgrade prevention
-    return {
-      shouldSync: false,
-      reason: `upstream-release-older-than-recorded (${tag} < ${lastPublishedTag})`,
-      tag,
-      normalizedVersion,
-    };
-  }
+    // Strict channel matching with prerelease field
+    if (parsed.channel === 'stable' && r.prerelease !== false) return false;
+    if (parsed.channel === 'canary' && r.prerelease !== true) return false;
 
-  // cmp < 0: tag is newer than lastPublishedTag
+    return true;
+  });
+
+  const stableReleases = validReleases
+    .filter((r) => parseReleaseTag(r.tag_name)?.channel === 'stable')
+    .sort((a, b) => compareStableTags(a.tag_name, b.tag_name));
+
+  const canaryReleases = validReleases
+    .filter((r) => parseReleaseTag(r.tag_name)?.channel === 'canary')
+    .sort((a, b) => compareCanaryTags(a.tag_name, b.tag_name));
+
   return {
-    shouldSync: true,
-    reason: 'new-upstream-release',
-    tag,
-    normalizedVersion,
+    latestStable: stableReleases[0] || null,
+    latestCanary: canaryReleases[0] || null,
   };
 }
 
 /**
- * Reads and strictly validates durable upstream canary state file.
- * Throws on malformed content or invalid field types.
+ * Determines whether a specific channel should sync.
+ * @param {object | null} latestRelease
+ * @param {object | null} channelState
+ * @param {'stable' | 'canary'} channel
+ * @returns {{ shouldSync: boolean, reason: string, tag: string, normalizedVersion: string, channel: string, publishedAt: string }}
+ */
+export function checkChannelSync(latestRelease, channelState, channel) {
+  if (!latestRelease) {
+    return {
+      shouldSync: false,
+      reason: `no-valid-${channel}-found`,
+      tag: '',
+      normalizedVersion: '',
+      channel,
+      publishedAt: '',
+    };
+  }
+
+  const tag = latestRelease.tag_name;
+  const parsed = parseReleaseTag(tag);
+  if (!parsed || parsed.channel !== channel) {
+    return {
+      shouldSync: false,
+      reason: `tag-not-in-channel-${channel}: ${tag}`,
+      tag: '',
+      normalizedVersion: '',
+      channel,
+      publishedAt: '',
+    };
+  }
+
+  const lastPublishedTag = channelState?.lastPublishedTag || '';
+  if (!lastPublishedTag) {
+    return {
+      shouldSync: true,
+      reason: `initial-${channel}-sync`,
+      tag,
+      normalizedVersion: parsed.normalized,
+      channel,
+      publishedAt: latestRelease.published_at,
+    };
+  }
+
+  const cmp = channel === 'canary'
+    ? compareCanaryTags(tag, lastPublishedTag)
+    : compareStableTags(tag, lastPublishedTag);
+
+  if (cmp === 0) {
+    return {
+      shouldSync: false,
+      reason: `already-published-${channel}`,
+      tag,
+      normalizedVersion: parsed.normalized,
+      channel,
+      publishedAt: latestRelease.published_at,
+    };
+  } else if (cmp > 0) {
+    return {
+      shouldSync: false,
+      reason: `${channel}-older-than-recorded (${tag} < ${lastPublishedTag})`,
+      tag,
+      normalizedVersion: parsed.normalized,
+      channel,
+      publishedAt: latestRelease.published_at,
+    };
+  }
+
+  return {
+    shouldSync: true,
+    reason: `new-${channel}-release`,
+    tag,
+    normalizedVersion: parsed.normalized,
+    channel,
+    publishedAt: latestRelease.published_at,
+  };
+}
+
+/**
+ * Selects which channel to sync if multiple are eligible.
+ * Prioritizes whichever release was published more recently, defaulting to stable on tie.
+ */
+export function selectPendingSync(stableDecision, canaryDecision) {
+  if (stableDecision.shouldSync && canaryDecision.shouldSync) {
+    const stableDate = new Date(stableDecision.publishedAt).getTime();
+    const canaryDate = new Date(canaryDecision.publishedAt).getTime();
+    if (!isNaN(canaryDate) && !isNaN(stableDate) && canaryDate > stableDate) {
+      return canaryDecision;
+    }
+    return stableDecision;
+  }
+  if (stableDecision.shouldSync) return stableDecision;
+  if (canaryDecision.shouldSync) return canaryDecision;
+
+  return {
+    shouldSync: false,
+    reason: 'already-up-to-date',
+    tag: '',
+    normalizedVersion: '',
+    channel: '',
+    publishedAt: '',
+  };
+}
+
+/**
+ * Backward compatible shouldSync function for existing callers and test suites.
+ * @param {object} params
+ * @param {object | null} params.latestCanaryRelease
+ * @param {object | null} params.lastRecordedState
+ * @returns {{ shouldSync: boolean, reason: string, tag: string, normalizedVersion: string }}
+ */
+export function shouldSync({ latestCanaryRelease, lastRecordedState }) {
+  const canaryState = lastRecordedState?.canary || lastRecordedState;
+  const decision = checkChannelSync(latestCanaryRelease, canaryState, 'canary');
+  return {
+    shouldSync: decision.shouldSync,
+    reason: decision.reason,
+    tag: decision.tag,
+    normalizedVersion: decision.normalizedVersion,
+  };
+}
+
+/**
+ * Reads and strictly validates durable upstream release state file.
+ * Handles both channelized state and legacy flat state with strict typing.
  * @param {string} filePath
- * @returns {{ lastPublishedTag: string, lastPublishedSha: string, lastPublishedAt: string, updatedAt: string }}
+ * @returns {{ canary: { lastPublishedTag: string, lastPublishedSha: string, lastPublishedAt: string, updatedAt: string }, stable: { lastPublishedTag: string, lastPublishedSha: string, lastPublishedAt: string, updatedAt: string }, lastPublishedTag: string, lastPublishedSha: string }}
  */
 export function loadState(filePath) {
+  const defaultChannelState = () => ({
+    lastPublishedTag: '',
+    lastPublishedSha: '',
+    lastPublishedAt: '',
+    updatedAt: '',
+  });
+
   if (!fs.existsSync(filePath)) {
     return {
+      canary: defaultChannelState(),
+      stable: defaultChannelState(),
       lastPublishedTag: '',
       lastPublishedSha: '',
       lastPublishedAt: '',
@@ -241,40 +391,65 @@ export function loadState(filePath) {
     throw new Error(`Invalid state file format at ${filePath}: expected a JSON object`);
   }
 
-  // Strict type validations
-  const { lastPublishedTag, lastPublishedSha, lastPublishedAt, updatedAt } = parsed;
+  // Handle migration from legacy flat state
+  const canaryRaw = parsed.canary || (parsed.lastPublishedTag?.includes('canary') ? parsed : defaultChannelState());
+  const stableRaw = parsed.stable || (!parsed.lastPublishedTag?.includes('canary') && parsed.lastPublishedTag ? parsed : defaultChannelState());
 
-  if (typeof lastPublishedTag !== 'string') {
-    throw new Error(`Invalid state field 'lastPublishedTag': expected string, got ${typeof lastPublishedTag}`);
-  }
-  if (lastPublishedTag && !parseCanaryTag(lastPublishedTag)) {
-    throw new Error(`Invalid 'lastPublishedTag' value in state: '${lastPublishedTag}' is not a valid canary tag`);
-  }
+  const validateChannel = (c, expectedChannel) => {
+    if (!c || typeof c !== 'object') {
+      throw new Error(`Invalid ${expectedChannel} section in state file: expected object`);
+    }
 
-  if (typeof lastPublishedSha !== 'string') {
-    throw new Error(`Invalid state field 'lastPublishedSha': expected string, got ${typeof lastPublishedSha}`);
-  }
-  if (lastPublishedSha && !isValidSha(lastPublishedSha)) {
-    throw new Error(`Invalid 'lastPublishedSha' value in state: '${lastPublishedSha}' is not a 40-character hex SHA`);
-  }
+    const { lastPublishedTag, lastPublishedSha, lastPublishedAt, updatedAt } = c;
 
-  if (typeof lastPublishedAt !== 'string') {
-    throw new Error(`Invalid state field 'lastPublishedAt': expected string, got ${typeof lastPublishedAt}`);
-  }
-  if (typeof updatedAt !== 'string') {
-    throw new Error(`Invalid state field 'updatedAt': expected string, got ${typeof updatedAt}`);
-  }
+    if (typeof lastPublishedTag !== 'string') {
+      throw new Error(`Invalid 'lastPublishedTag' in ${expectedChannel} state: expected string, got ${typeof lastPublishedTag}`);
+    }
+    if (lastPublishedTag) {
+      const parsedTag = parseReleaseTag(lastPublishedTag);
+      if (!parsedTag) {
+        throw new Error(`Invalid 'lastPublishedTag' in ${expectedChannel} state: '${lastPublishedTag}' is not a valid release tag`);
+      }
+      if (parsedTag.channel !== expectedChannel) {
+        throw new Error(`Channel mismatch in ${expectedChannel} state: tag '${lastPublishedTag}' belongs to channel '${parsedTag.channel}'`);
+      }
+    }
+
+    if (typeof lastPublishedSha !== 'string') {
+      throw new Error(`Invalid 'lastPublishedSha' in ${expectedChannel} state: expected string, got ${typeof lastPublishedSha}`);
+    }
+    if (lastPublishedSha && !isValidSha(lastPublishedSha)) {
+      throw new Error(`Invalid 'lastPublishedSha' in ${expectedChannel} state: '${lastPublishedSha}' is not a 40-character hex SHA`);
+    }
+
+    if (typeof lastPublishedAt !== 'string') {
+      throw new Error(`Invalid 'lastPublishedAt' in ${expectedChannel} state: expected string, got ${typeof lastPublishedAt}`);
+    }
+    if (typeof updatedAt !== 'string') {
+      throw new Error(`Invalid 'updatedAt' in ${expectedChannel} state: expected string, got ${typeof updatedAt}`);
+    }
+
+    return {
+      lastPublishedTag,
+      lastPublishedSha,
+      lastPublishedAt,
+      updatedAt,
+    };
+  };
+
+  const canary = validateChannel(canaryRaw, 'canary');
+  const stable = validateChannel(stableRaw, 'stable');
 
   return {
-    lastPublishedTag,
-    lastPublishedSha,
-    lastPublishedAt,
-    updatedAt,
+    canary,
+    stable,
+    lastPublishedTag: canary.lastPublishedTag || stable.lastPublishedTag || '',
+    lastPublishedSha: canary.lastPublishedSha || stable.lastPublishedSha || '',
   };
 }
 
 /**
- * Saves durable upstream canary state file.
+ * Saves durable upstream release state file.
  * @param {string} filePath
  * @param {object} state
  */
@@ -303,7 +478,7 @@ async function main() {
     const token = process.env.GITHUB_TOKEN || '';
     const headers = {
       'Accept': 'application/vnd.github+json',
-      'User-Agent': 'Sync-Upstream-Canary-Action',
+      'User-Agent': 'Sync-Upstream-Releases-Action',
     };
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
@@ -318,15 +493,16 @@ async function main() {
       process.exit(1);
     }
 
-    const canaryReleases = filterCanaryReleases(releases);
-    const latestCanaryRelease = canaryReleases[0] || null;
+    const { latestStable, latestCanary } = categorizeReleases(releases);
 
-    const decision = shouldSync({
-      latestCanaryRelease,
-      lastRecordedState: state,
-    });
+    const stableDecision = checkChannelSync(latestStable, state.stable, 'stable');
+    const canaryDecision = checkChannelSync(latestCanary, state.canary, 'canary');
 
-    console.log('Sync Decision:', JSON.stringify(decision, null, 2));
+    console.log('Stable Release Candidate:', JSON.stringify(stableDecision, null, 2));
+    console.log('Canary Release Candidate:', JSON.stringify(canaryDecision, null, 2));
+
+    const decision = selectPendingSync(stableDecision, canaryDecision);
+    console.log('Final Sync Decision:', JSON.stringify(decision, null, 2));
 
     // Export to GitHub Actions output if GITHUB_OUTPUT is set
     const githubOutput = process.env.GITHUB_OUTPUT;
@@ -335,6 +511,7 @@ async function main() {
       fs.appendFileSync(githubOutput, `sync_reason=${decision.reason}\n`);
       fs.appendFileSync(githubOutput, `target_tag=${decision.tag}\n`);
       fs.appendFileSync(githubOutput, `normalized_version=${decision.normalizedVersion}\n`);
+      fs.appendFileSync(githubOutput, `channel=${decision.channel}\n`);
     }
   } else if (command === 'record') {
     const tag = process.env.SYNCED_TAG || args[1];
@@ -346,8 +523,9 @@ async function main() {
       process.exit(1);
     }
 
-    if (!parseCanaryTag(tag)) {
-      console.error(`Invalid canary tag format: ${tag}`);
+    const parsed = parseReleaseTag(tag);
+    if (!parsed) {
+      console.error(`Invalid release tag format: ${tag}`);
       process.exit(1);
     }
 
@@ -357,13 +535,24 @@ async function main() {
     }
 
     const currentState = loadState(stateFile);
+    const channel = parsed.channel;
+    const now = new Date().toISOString();
+
+    currentState[channel] = {
+      lastPublishedTag: tag,
+      lastPublishedSha: sha,
+      lastPublishedAt: now,
+      updatedAt: now,
+    };
+
+    // Keep top-level compatibility keys
     currentState.lastPublishedTag = tag;
     currentState.lastPublishedSha = sha;
-    currentState.lastPublishedAt = new Date().toISOString();
-    currentState.updatedAt = new Date().toISOString();
+    currentState.lastPublishedAt = now;
+    currentState.updatedAt = now;
 
     saveState(stateFile, currentState);
-    console.log(`Successfully recorded published state for ${tag} (${sha}) in ${stateFile}`);
+    console.log(`Successfully recorded published ${channel} state for ${tag} (${sha}) in ${stateFile}`);
   } else {
     console.error(`Unknown command: ${command}`);
     process.exit(1);
