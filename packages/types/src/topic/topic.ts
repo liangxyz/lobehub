@@ -16,7 +16,7 @@ export type ShareVisibility = 'private' | 'link';
 export type TimeGroupId =
   'today' | 'yesterday' | 'week' | 'month' | `${number}-${string}` | `${number}`;
 
-export type TopicGroupMode = 'byTime' | 'byProject' | 'flat' | 'byStatus';
+export type TopicGroupMode = 'byTime' | 'byProject' | 'flat' | 'byStatus' | 'byAgent';
 export type TopicSortBy = 'createdAt' | 'updatedAt';
 
 /**
@@ -207,6 +207,16 @@ export interface ChatTopicMetadata {
   heteroSourceEndAt?: string;
   /** origin marker for imported topics, e.g. `claude-code-local` / `codex-local` */
   importedFrom?: string;
+  /**
+   * The newest agent message each viewer has seen in a messaging client (toby),
+   * written by `POST /api/v1/im/topics/{topicId}/read`, keyed by viewer id.
+   * Agent messages after the viewer's `readAt` count as unread. A viewer's entry
+   * only ever moves forward, and tracking viewers separately keeps one member of
+   * a shared workspace conversation from clearing everyone else's unread.
+   * `createdAtUs` is the stored ordering value: it keeps the cursor comparable
+   * after that message is deleted, and at the microseconds a Date drops.
+   */
+  imReadCursors?: Record<string, { createdAtUs: string; messageId: string; readAt: string }>;
   /**
    * Root operation that most recently consumed `runningOperation`.
    * Used to scope a post-terminal `unread` → `active` correction when the

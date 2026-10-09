@@ -79,7 +79,16 @@ export function registerAcceptanceCommands(parent: Command, options?: { deprecat
 
   acceptance
     .command('create')
-    .description('Create or reuse an acceptance without creating a verification round or results')
+    .summary('Create or reuse an acceptance without creating a verification round or results')
+    .description(
+      'Create or reuse an acceptance record. This does not create checks, verification rounds, results, reports, or evidence.\n\n' +
+        'Before creating, agents should load and read the acceptance skill (.agents/skills/acceptance/SKILL.md) ' +
+        'and follow its workflow. If the skill is missing, run `lh acceptance install`, then read it.\n\n' +
+        'Use create for flow-first planning. If a completed local report already exists, use ' +
+        '`lh acceptance run ingest <reportDir>` to publish it; a separate create call is unnecessary. ' +
+        'An acceptance URL alone does not mean verification is complete: publish results and required evidence, ' +
+        'then read back coverage before handing off a completed acceptance.',
+    )
     .requiredOption(
       '--requirement <text>',
       'Durable business goal (preserved when reusing a subject)',
