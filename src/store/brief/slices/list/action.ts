@@ -6,6 +6,7 @@ import {
   linkReplicaEntity,
   recordLens,
   type ReplicaSyncResult,
+  revalidateReplica,
 } from '@/libs/replica';
 import { mutate, useClientDataSWR } from '@/libs/swr';
 import { briefKeys, goalKeys } from '@/libs/swr/keys';
@@ -13,6 +14,7 @@ import { briefService } from '@/services/brief';
 import { taskService } from '@/services/task';
 import { type BriefStore } from '@/store/brief/store';
 import { type BriefItem } from '@/store/brief/types';
+import { goalGraphResource, homeGoalListResource } from '@/store/goal/projection';
 import { type StoreSetter } from '@/store/types';
 import { setNamespace } from '@/utils/storeDebug';
 
@@ -123,13 +125,14 @@ export class BriefListActionImpl {
     // A goal brief answered the goal itself: the island and the goal views
     // asking the same question have to drop it too.
     if (goal)
-      void mutate(
-        (key) =>
-          Array.isArray(key) &&
-          (key[0] === goalKeys.pendingForIsland()[0] ||
-            key[0] === 'task:homeGoals' ||
-            (key[0] === 'goal:graph' && key[1] === goal.goalId)),
-      );
+      void Promise.all([
+        mutate((key) => Array.isArray(key) && key[0] === goalKeys.pendingForIsland()[0]),
+        // The goal's own reads are replicas now: their sync entries live outside
+        // the `goal:` / `task:` SWR cache, so they are refreshed through the
+        // resource rather than a key prefix match.
+        revalidateReplica(homeGoalListResource),
+        revalidateReplica(goalGraphResource, goal.goalId),
+      ]);
   };
 
   // Free-form feedback from the brief card: resolve the brief with the

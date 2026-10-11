@@ -5,6 +5,7 @@ export {
   DEVICE_RPC_METHODS,
   type DeviceRpcMethod,
   executeDeviceRpc,
+  TERMINAL_UNSUPPORTED_MESSAGE,
   TRASH_UNSUPPORTED_MESSAGE,
 } from './dispatch';
 export {

@@ -177,10 +177,11 @@ const HomeInbox = memo<HomeInboxProps>((props) => {
   const showGoals = isLogin === true && goalsEnabled && showRailSections;
   const useFetchHomeGoals = useGoalStore((s) => s.useFetchHomeGoals);
   const goalsSWR = useFetchHomeGoals(showGoals, cacheScope);
-  // Branch off the SWR response: a persisted-cache hit never fires a network
-  // callback, so the store-backed selector lags a frame and the rail would
-  // render nothing until the revalidate lands.
-  const goals = goalsSWR.data?.goals; // The goal rail reads the goal's own lifecycle state (`goals.status`), so it
+  // Read the replica view, not the hook: the persisted roll-up paints the rail
+  // on the first frame and the sync only confirms it, so a cache hit no longer
+  // renders one empty frame before the revalidate lands.
+  const goals = useGoalStore((s) => s.homeGoalsByScope[cacheScope]?.goals);
+  // The goal rail reads the goal's own lifecycle state (`goals.status`), so it
   // no longer needs a separate acceptance read to decide each pile.
   const goalEntries = useMemo(
     () => (showGoals ? buildHomeGoalEntries(goals) : []),

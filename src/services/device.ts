@@ -97,6 +97,33 @@ class DeviceService {
     return lambdaClient.device.restartCli.mutate(input);
   }
 
+  /**
+   * Interactive terminal on the device. `createTerminalSession` opens a PTY and
+   * the rest drive it: `writeTerminal` for input, `readTerminal` to drain
+   * output from a cursor, `resizeTerminal` when the panel changes size and
+   * `closeTerminal` to end it. Polling rather than streaming is deliberate —
+   * see `@lobechat/device-control`'s terminal types.
+   */
+  createTerminalSession(input: Parameters<DeviceClient['createTerminalSession']['mutate']>[0]) {
+    return lambdaClient.device.createTerminalSession.mutate(input);
+  }
+
+  writeTerminal(input: Parameters<DeviceClient['writeTerminal']['mutate']>[0]) {
+    return lambdaClient.device.writeTerminal.mutate(input);
+  }
+
+  readTerminal(input: Parameters<DeviceClient['readTerminal']['mutate']>[0]) {
+    return lambdaClient.device.readTerminal.mutate(input);
+  }
+
+  resizeTerminal(input: Parameters<DeviceClient['resizeTerminal']['mutate']>[0]) {
+    return lambdaClient.device.resizeTerminal.mutate(input);
+  }
+
+  closeTerminal(input: Parameters<DeviceClient['closeTerminal']['mutate']>[0]) {
+    return lambdaClient.device.closeTerminal.mutate(input);
+  }
+
   /** The device's recent CPU / memory / load history, bucketed for charting. */
   getMetricSeries(deviceId: string) {
     return lambdaClient.deviceMetric.getSeries.query({ deviceId });

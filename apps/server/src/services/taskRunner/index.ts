@@ -31,6 +31,8 @@ export interface RunTaskParams {
   /** Extra builtin tools this run mounts beside the Task skill, e.g. the Goal report tool. */
   additionalPluginIds?: string[];
   continueTopicId?: string;
+  /** Explicit device target for this run only. The Task itself does not retain the binding. */
+  deviceId?: string;
   extraPrompt?: string;
   /** Optional per-operation cap. Omitted means the agent runtime remains uncapped. */
   maxSteps?: number;
@@ -105,6 +107,7 @@ export class TaskRunnerService {
       additionalPluginIds,
       taskId: idOrIdentifier,
       continueTopicId,
+      deviceId,
       extraPrompt,
       maxSteps,
       trigger = 'manual',
@@ -284,6 +287,7 @@ export class TaskRunnerService {
       const result = await aiAgentService.execAgent({
         ...(isSlug ? { slug: agentRef } : { agentId: agentRef }),
         additionalPluginIds: pluginIds,
+        ...(deviceId && { deviceId }),
         ...(typeof taskConfig.model === 'string' && { model: taskConfig.model }),
         ...(typeof taskConfig.provider === 'string' && { provider: taskConfig.provider }),
         hooks: createTaskRunHooks({

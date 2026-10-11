@@ -8,11 +8,10 @@ import { toast } from '@lobehub/ui/base-ui';
 import isEqual from 'fast-deep-equal';
 import { t } from 'i18next';
 
-import { createReplicaSlice, recordLens } from '@/libs/replica';
-import { mutate } from '@/libs/swr';
-import { goalKeys } from '@/libs/swr/keys';
+import { createReplicaSlice, recordLens, revalidateReplica } from '@/libs/replica';
 import { taskService } from '@/services/task';
 import { workService } from '@/services/work';
+import { goalGraphResource } from '@/store/goal/projection';
 import type { StoreSetter } from '@/store/types';
 import { useUserStore } from '@/store/user';
 import { userProfileSelectors } from '@/store/user/selectors';
@@ -611,9 +610,7 @@ export class TaskDetailSliceActionImpl {
         // and only polls while the goal is advancing — a paused or finished
         // goal would keep showing the old assignee. The task does not know its
         // goal, so revalidate every goal graph; only mounted ones refetch.
-        assigneeAgentId !== undefined
-          ? mutate((key) => Array.isArray(key) && key[0] === goalKeys.graph.root)
-          : undefined,
+        assigneeAgentId !== undefined ? revalidateReplica(goalGraphResource) : undefined,
       ]).catch(() => {});
     }
   };

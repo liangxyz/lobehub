@@ -1,4 +1,3 @@
-import { AGENT_CHAT_TOPIC_URL } from '@lobechat/const';
 import type { ChatTopic } from '@lobechat/types';
 import { ActionIcon, DropdownMenu, toast } from '@lobehub/ui/base-ui';
 import { MoreHorizontalIcon, PlusIcon } from 'lucide-react';
@@ -23,7 +22,7 @@ export function AgentDirectoryActions({
   agentId: string;
   path: string;
   topics: ChatTopic[];
-  onLegacyStart: () => Promise<void>;
+  onLegacyStart: (projectWorkingDirectoryId?: string) => Promise<void>;
   /** Render only the binding/menu affordance; the caller provides its own start action. */
   hideStartAction?: boolean;
 }) {
@@ -36,7 +35,8 @@ export function AgentDirectoryActions({
   const pinnedDevice = topics[0]?.metadata?.boundDeviceId;
   const deviceId =
     pinnedDevice ?? resolveTargetDeviceId(agencyConfig, currentDeviceId, { workspaceScoped });
-  const request = useProjectDirectoryStore((s) => s.useFetchDirectories)();
+  // Keep the directories query warm for the binding menu below.
+  useProjectDirectoryStore((s) => s.useFetchDirectories)();
   const directories = useProjectDirectories();
   const bindingId = topics[0]?.projectWorkingDirectoryId;
   const bindings = directories.filter((directory) =>
@@ -46,14 +46,14 @@ export function AgentDirectoryActions({
         directory.path.replace(/[\\/]+$/, '') === path.replace(/[\\/]+$/, ''),
   );
   const [pending, setPending] = useState(false);
-  const startTopic = useProjectDirectoryStore((s) => s.startTopic);
-  const start = async (id?: string) => {
+  // "+" opens the new-topic composer for this group; it must never create a
+  // topic. The row is persisted on the first message, which is also when the
+  // directory is applied — the caller stages it so the deferred topic is still
+  // born inside the project instead of dropping into a path-only conversation.
+  const start = async (projectWorkingDirectoryId?: string) => {
     setPending(true);
     try {
-      if (id) {
-        const topic = await startTopic(id, agentId, t('directories.untitled'));
-        navigate(AGENT_CHAT_TOPIC_URL(agentId, topic.id));
-      } else await onLegacyStart();
+      await onLegacyStart(projectWorkingDirectoryId);
     } catch (error) {
       console.error('Failed to start directory conversation', error);
       toast.error(error instanceof Error ? error.message : t('operationFailed', { ns: 'common' }));
@@ -110,16 +110,10 @@ export function AgentDirectoryActions({
       </DropdownMenu>
       {!hideStartAction && (
         <ActionIcon
+          disabled={pending}
           icon={PlusIcon}
           size="small"
           title={t('directories.start')}
-          disabled={
-            pending ||
-            !request.hasData ||
-            !!request.error ||
-            bindings.length > 1 ||
-            (!!bindingId && !bindings.length)
-          }
           onClick={(e) => {
             e.stopPropagation();
             void start(bindings[0]?.id);

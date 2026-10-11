@@ -67,8 +67,8 @@ describe('AgentDocumentService', () => {
     expect(mutate).toHaveBeenCalledWith(['agent:documents', 'agent-1']);
     // `documentsList` revalidates via a prefix matcher so the full list and the
     // `non-web` variant (and their workspace-scoped keys) refresh together. Pick
-    // the agent-documents matcher out of the list: the notebook branch also
-    // pushes a function matcher (its replica sync key) for `topic-1`.
+    // the agent-documents matcher out of the list: the page and notebook replicas
+    // also push function matchers for their own sync keys.
     const matchers = vi
       .mocked(mutate)
       .mock.calls.map((call) => call[0])
@@ -81,16 +81,25 @@ describe('AgentDocumentService', () => {
     expect(listMatcher!(['agent:documentsList', 'other-agent'])).toBe(false);
     expect(listMatcher!(['agent:documents', 'agent-1'])).toBe(false);
     expect(mutate).toHaveBeenCalledWith(['agent:documentEditor', 'agent-1', 'doc-1']);
-    expect(mutate).toHaveBeenCalledWith(['page:meta', 'page-doc-1']);
-    expect(mutate).toHaveBeenCalledWith(['page:detail', 'page-doc-1']);
-    expect(mutate).toHaveBeenCalledWith(['page:list']);
-    // The notebook list is a replica now, so `topicId` refreshes its sync key
-    // instead of the removed `notebook:documents` SWR entry.
+    // The page domain is a replica, so its list and by-id copies sync through
+    // `replica:sync` keys and refresh through the scoped matcher instead of the
+    // removed `page:*` SWR keys.
     const scope = cacheScope.get();
+    const matchesReplica = (key: unknown[]) => matchers.some((matcher) => matcher(key));
+    expect(matchesReplica(['replica:sync', 'pageDetail', 1, scope, 'page-doc-1', {}])).toBe(true);
+    // `revalidateReplica` without an entry key covers every entry of the
+    // resource…
+    expect(matchesReplica(['replica:sync', 'pageList', 1, scope, 'all', {}])).toBe(true);
+    expect(matchesReplica(['replica:sync', 'pageList', 1, scope, 'any-entry', {}])).toBe(true);
+    // …but only that resource, and only inside the active scope.
+    expect(matchesReplica(['replica:sync', 'otherResource', 1, scope, 'all', {}])).toBe(false);
+    expect(matchesReplica(['replica:sync', 'pageList', 1, 'other:personal', 'all', {}])).toBe(
+      false,
+    );
+    // The notebook list is a replica too, so `topicId` refreshes its sync key
+    // instead of the removed `notebook:documents` SWR entry.
     expect(
-      matchers.some((matcher) =>
-        matcher(['replica:sync', 'notebookDocuments', 1, scope, 'topic-1', 'topic-1']),
-      ),
+      matchesReplica(['replica:sync', 'notebookDocuments', 1, scope, 'topic-1', 'topic-1']),
     ).toBe(true);
   });
 

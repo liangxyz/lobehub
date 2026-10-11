@@ -2,6 +2,7 @@ import { BUILTIN_AGENT_SLUGS } from '@lobechat/builtin-agents';
 import type { LoaderFunctionArgs } from 'react-router';
 
 import { getSidebarTopicListParams } from '@/hooks/chatTopicListQuery';
+import { PRE_PAINT_HYDRATE_TIMEOUT, settleWithin } from '@/libs/replica/prePaint';
 import { readPersistedTranscript } from '@/services/message/replica';
 import { useAgentStore } from '@/store/agent';
 import { builtinAgentSelectors } from '@/store/agent/selectors';
@@ -9,28 +10,6 @@ import { useChatStore } from '@/store/chat';
 import { messageMapKey } from '@/store/chat/utils/messageMapKey';
 
 const builtinAgentSlugs = new Set<string>(Object.values(BUILTIN_AGENT_SLUGS));
-
-/**
- * Upper bound for the pre-paint hydrate.
- *
- * The read itself is not the risk: measured on the real storage path, a warm
- * IndexedDB read of the sidebar page (20 rows ≈ 9 KB) is ~0.2–0.5 ms p50, the
- * first read of a cold page with an existing database ~1–10 ms, and creating
- * the database ~7–30 ms. The deadline only ever fires on a pathological storage
- * stall, so a route transition never waits longer than this for it.
- */
-export const PRE_PAINT_HYDRATE_TIMEOUT = 50;
-
-/** Resolve once `promise` settles or `ms` elapses — never rejects, never hangs. */
-const settleWithin = (promise: Promise<unknown>, ms: number): Promise<void> =>
-  new Promise((resolve) => {
-    const finish = () => {
-      clearTimeout(timer);
-      resolve();
-    };
-    const timer = setTimeout(finish, ms);
-    void Promise.resolve(promise).then(finish, finish);
-  });
 
 /**
  * Builtin slugs (`inbox`, …) resolve from the store; an id passes through. A
@@ -102,6 +81,19 @@ export const preHydrateMessagesForRoute = async (
 
 /** Loader for the agent chat routes (`/agent/:aid`, `/agent/:aid/:topicId`). */
 export const agentChatTopicListLoader = async ({ params }: LoaderFunctionArgs): Promise<null> => {
+  /**
+   * A builtin slug (`inbox`, …) resolves to its id from `builtinAgentIdMap`, so
+   * the persisted builtin agent must be seeded before `resolveRouteAgentId` runs.
+   * The replica's storage read is the only place it can land pre-paint — the
+   * mount-time sync (and its hydrate) has not run yet.
+   */
+  if (params.aid && builtinAgentSlugs.has(params.aid)) {
+    await settleWithin(
+      useAgentStore.getState().preHydrateBuiltinAgent(params.aid),
+      PRE_PAINT_HYDRATE_TIMEOUT,
+    );
+  }
+
   await Promise.all([
     preHydrateTopicListForRoute(params.aid),
     preHydrateMessagesForRoute(params.aid, params.topicId),
