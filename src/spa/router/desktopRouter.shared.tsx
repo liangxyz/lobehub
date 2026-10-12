@@ -41,6 +41,8 @@ import RouteSegmentSkeleton from '@/components/Skeleton/RouteSegment';
 import ProviderSettingsSkeleton, {
   ProviderDetailSkeleton,
 } from '@/components/Skeleton/Settings/Provider';
+import { createSettingsSectionsSkeleton } from '@/components/Skeleton/Settings/Sections';
+import { WORKSPACE_SETTINGS_SECTION_SHAPES } from '@/components/Skeleton/Settings/sectionShapes';
 import { createSurfaceSkeleton } from '@/components/Skeleton/Surface';
 import { acceptanceRouteMeta } from '@/features/Acceptance/routeMeta';
 import { agentDocumentRouteMeta } from '@/features/AgentDocumentPage/routeMeta';
@@ -55,10 +57,11 @@ import {
   projectsRouteMeta,
 } from '@/features/Projects/routeMeta';
 import ResourceCategorySkeleton from '@/features/ResourceHome/Skeleton';
-import { settingsRouteMeta } from '@/features/Settings/features/routeMeta';
+import { createSettingsRouteMeta, settingsRouteMeta } from '@/features/Settings/features/routeMeta';
 import { workspaceHomeRouteMeta } from '@/features/Workspace/routeMeta';
 import WorkspaceProviderRedirect from '@/features/WorkspaceSetting/ProviderRedirect';
 import {
+  agentChannelDetailRouteMeta,
   agentChannelRouteMeta,
   agentChatDesktopRouteMeta,
   agentPermissionRouteMeta,
@@ -77,12 +80,25 @@ import AppShellSkeleton, { APP_SHELL_FALLBACK_ID } from '@/spa/BootShell/AppShel
 import { loadRouteWithBuiltinToolSurfaces } from '@/spa/initialize/toolSurfaces';
 import { agentChatTopicListLoader } from '@/spa/router/agentChatTopicListLoader';
 import { channelDataLoader } from '@/spa/router/channelDataLoader';
+import { identitiesListLoader } from '@/spa/router/identitiesListLoader';
 import { pageListLoader } from '@/spa/router/pageListLoader';
+import { preferenceListLoader } from '@/spa/router/preferenceListLoader';
 import { NoRouteSkeleton, routeMeta } from '@/spa/router/routeMeta';
 import { SettingsTabs } from '@/store/global/initialState';
 import { dynamicElement, dynamicLayout, ErrorBoundary, redirectElement } from '@/utils/router';
 
 export { ResourceCategorySkeleton };
+
+// Workspace settings tabs made of stacked filled groups. The content layout
+// declares `chrome='body'` and draws the header + padded container, so inside
+// it these render only the sections.
+const workspaceSettingsSkeletons = {
+  billing: createSettingsSectionsSkeleton(WORKSPACE_SETTINGS_SECTION_SHAPES.billing),
+  budget: createSettingsSectionsSkeleton(WORKSPACE_SETTINGS_SECTION_SHAPES.budget),
+  credits: createSettingsSectionsSkeleton(WORKSPACE_SETTINGS_SECTION_SHAPES.credits),
+  plans: createSettingsSectionsSkeleton(WORKSPACE_SETTINGS_SECTION_SHAPES.plans),
+  usage: createSettingsSectionsSkeleton(WORKSPACE_SETTINGS_SECTION_SHAPES.usage),
+};
 
 const agentChatElement = dynamicElement(
   () => loadRouteWithBuiltinToolSurfaces(() => import('@/routes/(main)/agent')),
@@ -225,7 +241,7 @@ export const sharedMainAreaChildren: RouteObject[] = [
               () => import('@/routes/(main)/agent/channel/[platform]'),
               'Desktop > Chat > Channel Platform',
             ),
-            handle: { meta: agentChannelRouteMeta },
+            handle: { meta: agentChannelDetailRouteMeta },
             loader: channelDataLoader,
             path: 'channel/:platform',
           },
@@ -764,6 +780,9 @@ export const sharedMainAreaChildren: RouteObject[] = [
         handle: {
           meta: routeMeta({ icon: BrainCircuit, titleKey: 'navigation.memoryIdentities' }),
         },
+        // Seed the persisted identity list before the page paints, so a cold
+        // start shows the local copy instead of a loading state.
+        loader: identitiesListLoader,
         path: 'identities',
       },
       {
@@ -784,6 +803,7 @@ export const sharedMainAreaChildren: RouteObject[] = [
         handle: {
           meta: routeMeta({ icon: BrainCircuit, titleKey: 'navigation.memoryPreferences' }),
         },
+        loader: preferenceListLoader,
         path: 'preferences',
       },
       {
@@ -1292,6 +1312,36 @@ const createMainAreaChildrenDefinition = (options: MainAreaRouteOptions = {}): R
         element: redirectElement('/settings/credential'),
         path: 'creds',
       },
+      // Devices list and detail get their own page-shaped skeletons; the generic
+      // `:tab` routes below would load them under the form-shaped settings one.
+      {
+        element: dynamicElement(
+          () => import('@/routes/(main)/settings'),
+          'Desktop > Settings > Devices',
+        ),
+        handle: {
+          meta: createSettingsRouteMeta({
+            Skeleton: createSurfaceSkeleton('grid'),
+            tab: SettingsTabs.Devices,
+          }),
+          settingsTab: SettingsTabs.Devices,
+        },
+        path: 'devices',
+      },
+      {
+        element: dynamicElement(
+          () => import('@/routes/(main)/settings'),
+          'Desktop > Settings > Devices > Detail',
+        ),
+        handle: {
+          meta: createSettingsRouteMeta({
+            Skeleton: createSurfaceSkeleton('detail'),
+            tab: SettingsTabs.Devices,
+          }),
+          settingsTab: SettingsTabs.Devices,
+        },
+        path: 'devices/:sub',
+      },
       // Other settings tabs
       {
         element: dynamicElement(
@@ -1402,6 +1452,23 @@ const createMainAreaChildrenDefinition = (options: MainAreaRouteOptions = {}): R
               },
               {
                 element: dynamicElement(
+                  () => import('@/routes/(main)/[workspaceSlug]/settings/teams'),
+                  'Desktop > Workspace > Settings > Teams',
+                ),
+                handle: { meta: routeMeta({ Skeleton: createSurfaceSkeleton('list') }) },
+                path: 'teams',
+              },
+              // Team detail — the page reads the team id from the route param.
+              {
+                element: dynamicElement(
+                  () => import('@/routes/(main)/[workspaceSlug]/settings/teams'),
+                  'Desktop > Workspace > Settings > Teams > Detail',
+                ),
+                handle: { meta: routeMeta({ Skeleton: createSurfaceSkeleton('form') }) },
+                path: 'teams/:teamId',
+              },
+              {
+                element: dynamicElement(
                   () => import('@/routes/(main)/[workspaceSlug]/settings/notification'),
                   'Desktop > Workspace > Settings > Notification',
                 ),
@@ -1436,7 +1503,7 @@ const createMainAreaChildrenDefinition = (options: MainAreaRouteOptions = {}): R
                   () => import('@/routes/(main)/[workspaceSlug]/settings/plans'),
                   'Desktop > Workspace > Settings > Plans',
                 ),
-                handle: { meta: routeMeta({ Skeleton: createSurfaceSkeleton('detail') }) },
+                handle: { meta: routeMeta({ Skeleton: workspaceSettingsSkeletons.plans }) },
                 path: 'plans',
               },
               {
@@ -1444,7 +1511,7 @@ const createMainAreaChildrenDefinition = (options: MainAreaRouteOptions = {}): R
                   () => import('@/routes/(main)/[workspaceSlug]/settings/billing'),
                   'Desktop > Workspace > Settings > Billing',
                 ),
-                handle: { meta: routeMeta({ Skeleton: createSurfaceSkeleton('detail') }) },
+                handle: { meta: routeMeta({ Skeleton: workspaceSettingsSkeletons.billing }) },
                 path: 'billing',
               },
               {
@@ -1452,7 +1519,7 @@ const createMainAreaChildrenDefinition = (options: MainAreaRouteOptions = {}): R
                   () => import('@/routes/(main)/[workspaceSlug]/settings/budget'),
                   'Desktop > Workspace > Settings > Budget',
                 ),
-                handle: { meta: routeMeta({ Skeleton: createSurfaceSkeleton('detail') }) },
+                handle: { meta: routeMeta({ Skeleton: workspaceSettingsSkeletons.budget }) },
                 path: 'budget',
               },
               {
@@ -1460,7 +1527,7 @@ const createMainAreaChildrenDefinition = (options: MainAreaRouteOptions = {}): R
                   () => import('@/routes/(main)/[workspaceSlug]/settings/credits'),
                   'Desktop > Workspace > Settings > Credits',
                 ),
-                handle: { meta: routeMeta({ Skeleton: createSurfaceSkeleton('detail') }) },
+                handle: { meta: routeMeta({ Skeleton: workspaceSettingsSkeletons.credits }) },
                 path: 'credits',
               },
               {
@@ -1468,7 +1535,7 @@ const createMainAreaChildrenDefinition = (options: MainAreaRouteOptions = {}): R
                   () => import('@/routes/(main)/[workspaceSlug]/settings/usage'),
                   'Desktop > Workspace > Settings > Usage',
                 ),
-                handle: { meta: routeMeta({ Skeleton: createSurfaceSkeleton('grid') }) },
+                handle: { meta: routeMeta({ Skeleton: workspaceSettingsSkeletons.usage }) },
                 path: 'usage',
               },
               {
@@ -1545,8 +1612,17 @@ const createMainAreaChildrenDefinition = (options: MainAreaRouteOptions = {}): R
                   () => import('@/routes/(main)/[workspaceSlug]/settings/devices'),
                   'Desktop > Workspace > Settings > Devices',
                 ),
-                handle: { meta: routeMeta({ Skeleton: createSurfaceSkeleton('list') }) },
+                handle: { meta: routeMeta({ Skeleton: createSurfaceSkeleton('grid') }) },
                 path: 'devices',
+              },
+              // Device detail level — the page reads the device id from `sub`.
+              {
+                element: dynamicElement(
+                  () => import('@/routes/(main)/[workspaceSlug]/settings/devices'),
+                  'Desktop > Workspace > Settings > Devices > Detail',
+                ),
+                handle: { meta: routeMeta({ Skeleton: createSurfaceSkeleton('detail') }) },
+                path: 'devices/:sub',
               },
               {
                 element: dynamicElement(

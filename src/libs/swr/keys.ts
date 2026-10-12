@@ -232,8 +232,6 @@ export const agentBuilderKeys = {
 
 // ---- group --------------------------------------------------------------
 export const groupKeys = {
-  detail: def('group:detail', (groupId: string) => ['group:detail', groupId]),
-  list: def('group:list', (isLogin: boolean) => ['group:list', isLogin]),
   /** Agent picker for the "add member" modal. */
   queryAgents: def('group:queryAgents', () => ['group:queryAgents']),
   /** Agent picker for the "create group" modal. */
@@ -626,13 +624,6 @@ export const userMemoryKeys = {
     'userMemory:experiences',
     params,
   ]),
-  /** Injection identities (distinct from the paginated `identityList`). */
-  identities: def('userMemory:identities', () => ['userMemory:identities']),
-  /** Paginated identity list for the memory home views. */
-  identityList: def('userMemory:identityList', (params: unknown) => [
-    'userMemory:identityList',
-    params,
-  ]),
   memoryDetail: def('userMemory:memoryDetail', (layer: string, id: string) => [
     'userMemory:memoryDetail',
     layer,
@@ -648,10 +639,6 @@ export const userMemoryKeys = {
     cacheKey,
   ]),
   tags: def('userMemory:tags', () => ['userMemory:tags']),
-  topicMemories: def('userMemory:topicMemories', (topicId: string) => [
-    'userMemory:topicMemories',
-    topicId,
-  ]),
 };
 
 // ---- tool (skills / plugins / builtin / mcp / composio stores) -------------

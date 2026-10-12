@@ -211,6 +211,14 @@ export default {
   'goalProcess.deliverables.from': 'From “{{title}}”',
   'goalProcess.deliverables.title': 'Deliverables',
   'goalProcess.deliverables.untitled': 'Untitled',
+  'taskCard.field.activities': 'Activities',
+  'taskCard.field.dependencies': 'Dependencies',
+  'taskCard.field.description': 'Description',
+  'taskCard.field.instruction': 'Instruction',
+  'taskCard.field.review': 'Review',
+  'taskCard.field.reviewRubrics': 'Review rubrics',
+  'taskCard.field.subtasks': 'Subtasks',
+  'taskCard.field.workspace': 'Workspace',
   'taskExecution.fixedTip': 'The execution environment is fixed in the Agent Profile.',
   'taskExecution.followAgent': 'Follow the agent',
   'taskExecution.followAgentDesc': "Use the assignee agent's execution environment",
@@ -840,6 +848,16 @@ export default {
   'mention.category.topics': 'Topics',
   'mention.category.workspaceAgents': 'Workspace',
   'mention.title': 'Mention Members',
+  'messageAction.codexEdit.alreadySubmitting': 'This edit is already being submitted',
+  'messageAction.codexEdit.branchFailed':
+    'Could not create the new topic. Your edit is kept; try sending again.',
+  'messageAction.codexEdit.branchNotice':
+    'Sends in a new topic; the original stays as it is. Files Codex already changed are not reverted.',
+  'messageAction.codexEdit.cannotSubmit':
+    'This conversation cannot accept an edited message right now',
+  'messageAction.codexEdit.prepareFailed':
+    'Could not load the new topic. Your edit is kept; try sending again.',
+  'messageAction.codexEdit.sourceUnavailable': 'The source conversation or agent is unavailable',
   'messageAction.collapse': 'Collapse Message',
   'messageAction.continueGeneration': 'Continue Generating',
   'messageAction.continueGenerationUnsupported':
@@ -1165,6 +1183,9 @@ export default {
   'qoderInstallGuide.menuNotification.title': 'Qoder CLI not found',
   'qoderInstallGuide.reason': 'LobeHub could not start Qoder: {{message}}',
   'qoderInstallGuide.title': 'Install Qoder CLI',
+  'quickChatSwitcher.empty': 'No agents found',
+  'quickChatSwitcher.more': 'More agents',
+  'quickChatSwitcher.searchPlaceholder': 'Search agents...',
   'kimiCodeInstallGuide.actions.openDocs': 'Open Install Guide',
   'kimiCodeInstallGuide.actions.openSystemTools': 'Open System Tools',
   'kimiCodeInstallGuide.afterInstall':
@@ -3644,5 +3665,8 @@ export default {
   'internalLink.preview.verifyStatus.uncertain': 'Uncertain',
   'internalLink.preview.verifyStatus.unverified': 'Unverified',
   'internalLink.preview.verifyStatus.verifying': 'Verifying',
+  'userFeedbackCard.count_one': '{{count}} comment',
+  'userFeedbackCard.count_other': '{{count}} comments',
+  'userFeedbackCard.title': 'User feedback',
   'you': 'You',
 };

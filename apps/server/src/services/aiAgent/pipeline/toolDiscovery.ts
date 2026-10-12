@@ -20,12 +20,13 @@ import type {
 import type { LobeChatDatabase } from '@lobechat/database';
 import type { DeviceUnavailableErrorData } from '@lobechat/device-gateway-client';
 import {
+  dropInvalidManifests,
   readFrozenModelFacts,
   resolveClientExecutors,
   resolveDiscoveryPool,
   resolveInvocationToolIds,
 } from '@lobechat/mecha';
-import { FILE_INLINE_MAX_CHARS, isOversizedFileContent } from '@lobechat/prompts';
+import { FILE_PREVIEW_CHARS, isOversizedFileContent } from '@lobechat/prompts';
 import type {
   BuiltinToolResolveContext,
   ChatTopicBotContext,
@@ -521,8 +522,11 @@ export const discoverTools = async (
   }
 
   /**
-   * Whether this turn sends any file as a truncated preview (see `previewLongFileContent`):
-   * an enabled agent file, or a parsed attachment of this turn or topic, over the inline limit.
+   * Whether this turn can send any file as a truncated preview (see `previewLongFileContent`):
+   * an enabled agent file over the inline limit, or a parsed attachment of this turn or topic
+   * longer than a preview. Attachments under the inline limit are still previewed once the
+   * request's attachment budget is spent (`planAttachmentPreviews`), which is only known per step,
+   * so any attachment a preview would shorten enables the tool.
    * Enables the attachments tool in the modes whose rules include it (agent / chat). The preview
    * only names `readAttachment` when the final tool set carries it (see `MessagesEngine`), so
    * custom / exclusive tool turns and share visitors fall back to a plain preview.
@@ -539,7 +543,7 @@ export const discoverTools = async (
     return traceDiscoveryStage('oversized_files', () =>
       new DocumentModel(deps.db, deps.userId, deps.workspaceId).hasFileDocumentsOverChars({
         fileIds: attachedFileIds,
-        minChars: FILE_INLINE_MAX_CHARS,
+        minChars: FILE_PREVIEW_CHARS,
         topicId,
       }),
     );
@@ -1192,6 +1196,19 @@ export const discoverTools = async (
       enabledManifests: manifestMap,
       exclusivePluginIds,
       executionTarget: executionPlan.target,
+      // Installed-but-not-pinned plugins (`auto` in the three-state plugin
+      // config): the model must be able to discover and activate them mid-run,
+      // exactly as the client runtime lists them from `installedPlugins`.
+      // They never join `enabledToolIds` — the engine's rules stay pinned-only
+      // — so this widens what the activator can reach, not what the run gets
+      // by default. Disabled ids were dropped in 5a and the pool's own ingest
+      // wall re-checks them; a connector / Composio / LobeHub skill manifest
+      // of the same identifier still wins, because the pool seeds this source
+      // last.
+      installedManifests: dropInvalidManifests(
+        pluginsWithoutConnectors.map((plugin) => plugin.manifest as LobeToolManifest | undefined),
+        'installedPlugins(auto)',
+      ),
       lobehubSkills: activeLobehubSkillManifests,
       manifestContext,
     });
@@ -1200,7 +1217,6 @@ export const discoverTools = async (
     Object.assign(
       toolExecutorMap,
       resolveClientExecutors({
-        enabledIds: new Set(manifestMap.keys()),
         hasDeviceProxy: gatewayConfigured,
         manifestMap: toolManifestMap,
         stdioIdentifiers: [
