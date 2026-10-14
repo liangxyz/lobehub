@@ -7,8 +7,10 @@ import { stripGoalCommand, withConversationGoalPrompt } from '@lobechat/builtin-
 import type { HeterogeneousAgentSessionError } from '@lobechat/electron-client-ipc';
 import { HeterogeneousAgentSessionErrorCode } from '@lobechat/electron-client-ipc';
 import {
+  appendAttachedFilesToPrompt,
   buildHeterogeneousAgentAuthRequiredError,
   createMainAgentRunState,
+  type HeteroAttachedFileRef,
   isHeterogeneousAgentAuthRequired,
   isHeterogeneousProviderBindingSupported,
   isLocalHeterogeneousType,
@@ -61,6 +63,7 @@ import {
   setHeteroSessionBindingKeyForWorkingDirectory,
   setHeteroSessionIdForWorkingDirectory,
 } from '@/helpers/heteroSessionByWorkingDirectory';
+import { createPayloadWithKeyVaults } from '@/services/_auth';
 import { agentQuotaService } from '@/services/agentQuota';
 import { heterogeneousAgentService } from '@/services/electron/heterogeneousAgent';
 import {
@@ -229,6 +232,11 @@ const isRecoverableResumeError = (
 
 export interface HeterogeneousAgentExecutorParams {
   assistantMessageId: string;
+  /**
+   * Non-image attachments from the user message. No CLI accepts them as content
+   * blocks, so they are appended to the prompt as download links.
+   */
+  attachedFiles?: HeteroAttachedFileRef[];
   context: ConversationContext;
   contextSelections?: ContextSelection[];
   heterogeneousProvider: HeterogeneousProviderConfig;
@@ -501,6 +509,7 @@ export const executeHeterogeneousAgent = async (
     heterogeneousProvider: persistedHeterogeneousProvider,
     contextSelections,
     assistantMessageId,
+    attachedFiles,
     context,
     imageList,
     message,
@@ -2014,6 +2023,10 @@ export const executeHeterogeneousAgent = async (
       // over both provenance and account routing.
       ...heterogeneousProvider.env,
     };
+    if (adapterType === 'deepseek-harness' && !sessionEnv.DEEPSEEK_API_KEY) {
+      const deepSeekAuth = createPayloadWithKeyVaults('deepseek');
+      if (deepSeekAuth.apiKey) sessionEnv.DEEPSEEK_API_KEY = deepSeekAuth.apiKey;
+    }
 
     const spawnArgs = buildHeteroSpawnArgs(heterogeneousProvider);
     const providerBinding = serverDefaultBindingActive
@@ -2034,11 +2047,17 @@ export const executeHeterogeneousAgent = async (
     const result = await heterogeneousAgentService.startSession({
       agentType: isLocalHeterogeneousType(adapterType) ? adapterType : undefined,
       args: spawnArgs,
-      command: resolveHeterogeneousAgentCommand(adapterType, heterogeneousProvider.command),
+      command:
+        adapterType === 'deepseek-harness'
+          ? ''
+          : resolveHeterogeneousAgentCommand(adapterType, heterogeneousProvider.command),
       cwd: workingDirectory,
       env: sessionEnv,
       initialModel:
-        (adapterType === 'devin' || adapterType === 'droid' || adapterType === 'trae') &&
+        (adapterType === 'devin' ||
+          adapterType === 'droid' ||
+          adapterType === 'trae' ||
+          adapterType === 'deepseek-harness') &&
         !providerBindingActive &&
         heterogeneousProvider.model &&
         heterogeneousProvider.model !== HETEROGENEOUS_AGENT_DEFAULT_SELECTION
@@ -2655,7 +2674,7 @@ export const executeHeterogeneousAgent = async (
       operationId,
       // `/goal` travels as system-context instructions; the CLI gets only the
       // request so its own `/goal` command does not take the message over.
-      prompt: stripGoalCommand(message),
+      prompt: appendAttachedFilesToPrompt(stripGoalCommand(message), attachedFiles),
       ...(replayTranscript
         ? { replayTranscript: true, replayTranscriptConfigDir, replayTranscriptStartedAt }
         : {}),
