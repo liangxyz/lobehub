@@ -1,7 +1,17 @@
-import { type DropdownMenuProps, type MenuProps } from '@lobehub/ui';
-import { DropdownMenu, Icon } from '@lobehub/ui';
-import { ActionIcon, confirmModal, toast } from '@lobehub/ui/base-ui';
-import { createStaticStyles } from 'antd-style';
+import {
+  type DropdownItem,
+  type DropdownMenuProps,
+  type MenuInfo,
+  type MenuItemType,
+} from '@lobehub/ui';
+import {
+  ActionIcon,
+  confirmModal,
+  createStaticStyles,
+  DropdownMenu,
+  Icon,
+  toast,
+} from '@lobehub/ui';
 import { MoreVertical, PencilLine, Plus, Settings2, Trash, UsersRound } from 'lucide-react';
 import { memo, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -25,9 +35,6 @@ interface ActionsProps extends Pick<DropdownMenuProps, 'onOpenChange'> {
   openRenameModal?: () => void;
 }
 
-type ItemOfType<T> = T extends (infer Item)[] ? Item : never;
-type MenuItemType = ItemOfType<MenuProps['items']>;
-
 const Actions = memo<ActionsProps>(
   ({ id, openRenameModal, openConfigModal, onOpenChange, isCustomGroup, isPinned }) => {
     const { t } = useTranslation(['chat', 'common']);
@@ -47,7 +54,7 @@ const Actions = memo<ActionsProps>(
       icon: <Icon icon={Settings2} />,
       key: 'config',
       label: t('sessionGroup.config'),
-      onClick: ({ domEvent }) => {
+      onClick: ({ domEvent }: MenuInfo) => {
         domEvent.stopPropagation();
         openConfigModal();
       },
@@ -57,7 +64,7 @@ const Actions = memo<ActionsProps>(
       icon: <Icon icon={Plus} />,
       key: 'newAgent',
       label: t('newAgent'),
-      onClick: async ({ domEvent }) => {
+      onClick: async ({ domEvent }: MenuInfo) => {
         domEvent.stopPropagation();
         const creatingToast = toast.loading(t('sessionGroup.creatingAgent'));
 
@@ -76,7 +83,7 @@ const Actions = memo<ActionsProps>(
       icon: <Icon icon={UsersRound} />,
       key: 'newGroupChat',
       label: t('newGroupChat'),
-      onClick: ({ domEvent }) => {
+      onClick: ({ domEvent }: MenuInfo) => {
         domEvent.stopPropagation();
         setIsGroupModalOpen(true);
       },
@@ -121,13 +128,13 @@ const Actions = memo<ActionsProps>(
       setIsGroupModalOpen(false);
     };
 
-    const customGroupItems: MenuProps['items'] = useMemo(
+    const customGroupItems: DropdownItem[] = useMemo(
       () => [
         {
           icon: <Icon icon={PencilLine} />,
           key: 'rename',
           label: t('sessionGroup.rename'),
-          onClick: ({ domEvent }) => {
+          onClick: ({ domEvent }: MenuInfo) => {
             domEvent.stopPropagation();
             openRenameModal?.();
           },
@@ -141,7 +148,7 @@ const Actions = memo<ActionsProps>(
           icon: <Icon icon={Trash} />,
           key: 'delete',
           label: t('delete', { ns: 'common' }),
-          onClick: ({ domEvent }) => {
+          onClick: ({ domEvent }: MenuInfo) => {
             domEvent.stopPropagation();
             confirmModal({
               cancelText: t('cancel', { ns: 'common' }),
@@ -160,7 +167,7 @@ const Actions = memo<ActionsProps>(
       [],
     );
 
-    const defaultItems: MenuProps['items'] = useMemo(() => [sessionGroupConfigPublicItem], []);
+    const defaultItems: DropdownItem[] = useMemo(() => [sessionGroupConfigPublicItem], []);
 
     const tailItems = useMemo(
       () => (isCustomGroup ? customGroupItems : defaultItems),

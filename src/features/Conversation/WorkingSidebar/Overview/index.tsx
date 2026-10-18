@@ -1,10 +1,19 @@
 'use client';
 
 import type { DeviceGitLinkedPullRequest } from '@lobechat/types';
-import { Empty, Flexbox, Icon, Tooltip } from '@lobehub/ui';
-import { Button, Skeleton, toast } from '@lobehub/ui/base-ui';
+import {
+  Button,
+  createStaticStyles,
+  cssVar,
+  cx,
+  Empty,
+  Flexbox,
+  Icon,
+  Skeleton,
+  toast,
+  Tooltip,
+} from '@lobehub/ui';
 import { SkillsIcon } from '@lobehub/ui/icons';
-import { createStaticStyles, cssVar, cx } from 'antd-style';
 import {
   ArrowDownIcon,
   ArrowUpIcon,
@@ -49,6 +58,7 @@ import { labPreferSelectors } from '@/store/user/selectors';
 
 import GoalSection from '../GoalSection';
 import ProgressSection from '../ProgressSection';
+import DeviceStatusSection from './DeviceStatusSection';
 import { collectChangeStats, isLinkedWorktreeCheckout, shouldShowCiLabel } from './overviewData';
 import OverviewHeader from './OverviewHeader';
 import { ChevronRight, OverviewRow, PickerGlyph, rowStyles } from './OverviewRow';
@@ -68,6 +78,7 @@ const styles = createStaticStyles(({ css }) => ({
 interface OverviewProps {
   active: boolean;
   agentId?: string;
+  /** Routes file / git RPCs; empty for "This device", which reads over IPC. */
   deviceId?: string;
   environmentAvailable: boolean;
   onOpenTab: (tab: string) => void;
@@ -76,6 +87,8 @@ interface OverviewProps {
   pullRequest?: DeviceGitLinkedPullRequest | null;
   repoType?: string;
   sourcePath?: string;
+  /** The bound machine whose live status to show, local desktop included. */
+  statusDeviceId?: string;
   workingDirectory?: string;
 }
 
@@ -92,6 +105,7 @@ const Overview = memo<OverviewProps>(
     pullRequest,
     repoType,
     sourcePath,
+    statusDeviceId,
     workingDirectory,
   }) => {
     const { t } = useTranslation('chat');
@@ -418,6 +432,9 @@ const Overview = memo<OverviewProps>(
             </Flexbox>
           </>
         )}
+
+        {/* The bound machine's live state, as its device card shows it. */}
+        {statusDeviceId && <DeviceStatusSection active={active} deviceId={statusDeviceId} />}
 
         <TopicBackgroundActivity topicId={topicId} />
         {environmentAvailable && !workingDirectory && (
