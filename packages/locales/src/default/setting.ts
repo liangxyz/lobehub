@@ -533,6 +533,12 @@ export default {
   'heterogeneousStatus.cloud.tokenChange': 'Change',
   'heterogeneousStatus.cloud.tokenSave': 'Save',
   'heterogeneousStatus.cloud.tokenCancel': 'Cancel',
+  'heterogeneousStatus.cloud.tokenRemove': 'Remove',
+  'heterogeneousStatus.cloud.tokenRemoveTitle': 'Remove Claude Code token?',
+  'heterogeneousStatus.cloud.tokenRemoveConfirm':
+    'This deletes your Claude Code OAuth token from Credentials. Cloud runs of Claude Code agents will not be able to use it until you save a new token.',
+  'heterogeneousStatus.cloud.tokenRemoveError':
+    'Failed to remove the Claude Code token. Please try again.',
   'heterogeneousStatus.cloud.githubLabel': 'GitHub Connection',
   'heterogeneousStatus.cloud.githubDesc':
     'Select a GitHub OAuth credential to allow the sandbox to clone your private repositories.',
@@ -975,6 +981,10 @@ export default {
   'notification.channel.status.enabledCount': 'Enabled for {{num}} notification types',
   'notification.channel.status.notLinked': 'Not linked',
   'notification.channel.types.title': 'Notification types',
+  'notification.content.scheduledTaskSummary.desc':
+    'When a scheduled task succeeds, include a short summary of what the run did in the notification.',
+  'notification.content.scheduledTaskSummary.title': 'Include run summary for scheduled tasks',
+  'notification.content.title': 'Notification content',
   'notification.email.desc': 'Receive email notifications when important events occur',
   'notification.im.banner.platformUnlinked': '{{platform}} is not linked yet',
   'notification.im.desc':
@@ -4169,6 +4179,9 @@ When I am ___, I need ___
   'environments.upgrade.benefits.instances.title': 'One copy per task',
   'environments.upgrade.benefits.instances.desc':
     'Parallel conversations each run in their own copy of the environment, so nothing overwrites anything else.',
+  'environments.github.refreshFailed':
+    'Could not refresh GitHub repositories. Showing the previous list. Try again.',
+  'environments.github.loadFailed': 'Could not load GitHub repositories. Try again.',
   'environments.github.label': 'Repository',
   'environments.github.notConnected':
     'No GitHub connection yet — connect one to build an environment from a repository',
@@ -4207,6 +4220,13 @@ When I am ___, I need ___
   'environments.form.rawEditor': 'Raw editor',
   'environments.form.rawEditorHint':
     'One KEY=value per line, the way a .env file reads. Blank lines and # comments are ignored; saving replaces every variable.',
+  'environments.form.rawFormat': 'Detected format: {{format}}',
+  'environments.form.rawFormatsHint':
+    'Edit a JSON object with string values, or replace it with .env text (KEY=value per line). JSON decodes escapes; .env keeps backslashes literally. Saving replaces all variables.',
+  'environments.form.jsonSyntax':
+    'Invalid JSON. Check double quotes, commas and braces, then save again.',
+  'environments.form.jsonValues':
+    'Use a JSON object with a string value for every variable, such as {"NODE_ENV":"production"}.',
   'environments.form.rawInvalid': 'Line {{line}} is not KEY=value',
   'environments.form.removeEnv': 'Remove variable',
   'environments.form.internetAccess': 'Agent internet access',
