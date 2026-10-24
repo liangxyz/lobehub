@@ -12,33 +12,42 @@ import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { usePermission } from '@/hooks/usePermission';
+import { chatGroupService } from '@/services/chatGroup';
 import { useGlobalStore } from '@/store/global';
 import { useHomeStore } from '@/store/home';
 
 interface CreateGroupContentProps {
   id: string;
+  itemType: 'agent' | 'group';
+  visibility?: 'private' | 'public';
 }
 
-const CreateGroupContent = memo<CreateGroupContentProps>(({ id }) => {
+const CreateGroupContent = memo<CreateGroupContentProps>(({ id, itemType, visibility }) => {
   const { t } = useTranslation(['chat', 'common']);
   const { close } = useModalContext();
   const { allowed: canCreate } = usePermission('create_content');
 
   const toggleExpandSessionGroup = useGlobalStore((s) => s.toggleExpandSessionGroup);
-  const [addGroup, updateAgentGroup] = useHomeStore((s) => [s.addGroup, s.updateAgentGroup]);
+  const [updateAgentGroup, addCustomGroup] = useHomeStore((s) => [s.updateAgentGroup, s.addGroup]);
 
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleCreate = async () => {
+    // Enter fires as fast as the user repeats it — a second pass while
+    // `addCustomGroup` is in flight would create a second group and move the
+    // item into whichever request settles last.
     if (!canCreate || loading) return;
     if (input.length === 0 || input.length > 20 || input.trim() === '')
       return toast.warning(t('sessionGroup.tooLong'));
 
     setLoading(true);
     try {
-      const groupId = await addGroup(input);
-      await updateAgentGroup(id, groupId);
+      const groupId = await addCustomGroup(input, visibility);
+      if (itemType === 'group') {
+        await chatGroupService.updateGroup(id, { groupId });
+        await useHomeStore.getState().refreshAgentList();
+      } else await updateAgentGroup(id, groupId);
       toggleExpandSessionGroup(groupId, true);
       toast.success(t('sessionGroup.createSuccess'));
       close();
@@ -71,9 +80,13 @@ const CreateGroupContent = memo<CreateGroupContentProps>(({ id }) => {
 
 CreateGroupContent.displayName = 'MobileCreateGroupContent';
 
-export const openCreateGroupModal = (id: string) =>
+export const openCreateGroupModal = (
+  id: string,
+  itemType: 'agent' | 'group',
+  visibility?: 'private' | 'public',
+) =>
   createModal({
-    content: <CreateGroupContent id={id} />,
+    content: <CreateGroupContent id={id} itemType={itemType} visibility={visibility} />,
     footer: null,
     styles: { content: { padding: 0 } },
     title: translate('sessionGroup.createGroup', { ns: 'chat' }),

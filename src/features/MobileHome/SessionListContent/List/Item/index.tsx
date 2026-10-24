@@ -1,103 +1,53 @@
-import React, { memo, useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { shallow } from 'zustand/shallow';
-
-import { agentDisplayName } from '@lobechat/types';
 import { DEFAULT_AVATAR } from '@lobechat/const';
-import { isDesktop } from '@/const/version';
+import { agentDisplayName, type SidebarAgentItem } from '@lobechat/types';
+import { Flexbox } from '@lobehub/ui';
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
+import { ModelTag } from '@/components/LobeIcons';
+import { useAgentStore } from '@/store/agent';
+import { useAgentGroupStore } from '@/store/agentGroup';
 import { useChatStore } from '@/store/chat';
 import { operationSelectors } from '@/store/chat/selectors';
-import { useGlobalStore } from '@/store/global';
-import { useHomeStore } from '@/store/home';
-import { homeAgentListSelectors } from '@/store/home/selectors';
 
 import ListItem from '../../ListItem';
-import { openCreateGroupModal } from '../../Modals/CreateGroupModal';
 import Actions from './Actions';
 
-interface AgentItemProps {
-  groupId?: string;
-  id: string;
-}
-
-const AgentItem = memo<AgentItemProps>(({ groupId, id }) => {
-  const [open, setOpen] = useState(false);
+const AgentItem = ({ item, groupId }: { item: SidebarAgentItem; groupId?: string | null }) => {
   const { t } = useTranslation('chat');
-
-  const openAgentInNewWindow = useGlobalStore((s) => s.openAgentInNewWindow);
-
-  const active = useChatStore((s) => s.activeAgentId === id);
+  const [open, setOpen] = useState(false);
+  const activeAgentId = useAgentStore((s) => s.activeAgentId);
+  const activeGroupId = useAgentGroupStore((s) => s.activeGroupId);
   const loading = useChatStore(
-    (s) => operationSelectors.isAgentRuntimeVisiblyRunning(s) && id === s.activeAgentId,
+    item.type === 'group'
+      ? operationSelectors.isGroupVisiblyRunning(item.id)
+      : operationSelectors.isAgentVisiblyRunning(item.id),
   );
-
-  const item = useHomeStore((s) => homeAgentListSelectors.getAgentById(id)(s));
-
-  const pin = item?.pinned ?? false;
-  // name wins over title (matches desktop sidebar); i18n fallback for unnamed
-  const title = agentDisplayName(item, t('untitledAgent'));
-  const avatar = item?.avatar || DEFAULT_AVATAR;
-  const avatarBackground = item?.backgroundColor ?? undefined;
-  const updateAt = item?.updatedAt;
-
-  const sessionAvatar = avatar;
-
-  const handleDoubleClick = () => {
-    if (isDesktop) {
-      openAgentInNewWindow(id);
-    }
-  };
-
-  const handleDragStart = (e: React.DragEvent) => {
-    e.dataTransfer.setData('text/plain', id);
-  };
-
-  const handleDragEnd = (e: React.DragEvent) => {
-    if (isDesktop && e.dataTransfer.dropEffect === 'none') {
-      openAgentInNewWindow(id);
-    }
-  };
-
-  const actions = useMemo(
-    () => (
-      <Actions
-        group={groupId}
-        id={id}
-        openCreateGroupModal={() => openCreateGroupModal(id)}
-        setOpen={setOpen}
-      />
-    ),
-    [groupId, id],
-  );
-
   return (
     <ListItem
-      actions={actions}
-      active={active}
-      avatar={sessionAvatar as any}
-      avatarBackground={avatarBackground}
-      date={updateAt?.valueOf()}
-      draggable={isDesktop}
-      key={id}
+      actions={<Actions groupId={groupId} item={item} setOpen={setOpen} />}
+      active={item.type === 'group' ? activeGroupId === item.id : activeAgentId === item.id}
+      avatar={item.avatar || DEFAULT_AVATAR}
+      avatarBackground={item.backgroundColor || undefined}
+      date={item.updatedAt?.valueOf()}
+      key={item.id}
       loading={loading}
-      pin={pin}
+      pin={item.pinned}
       showAction={open}
-      title={title}
-      type={'agent'}
+      title={agentDisplayName(item, t(item.type === 'group' ? 'untitledGroup' : 'untitledAgent'))}
+      type={item.type}
+      addon={
+        item.type === 'agent' && item.model ? (
+          <Flexbox horizontal gap={4} style={{ flexWrap: 'wrap' }}>
+            <ModelTag model={item.model} />
+          </Flexbox>
+        ) : undefined
+      }
       styles={{
-        container: {
-          gap: 12,
-        },
-        content: {
-          gap: 6,
-          maskImage: `linear-gradient(90deg, #000 90%, transparent)`,
-        },
+        container: { gap: 12 },
+        content: { gap: 6, maskImage: 'linear-gradient(90deg, black 90%, transparent)' },
       }}
-      onDoubleClick={handleDoubleClick}
-      onDragEnd={handleDragEnd}
-      onDragStart={handleDragStart}
     />
   );
-}, shallow);
-
+};
 export default AgentItem;

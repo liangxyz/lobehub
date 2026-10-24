@@ -1,43 +1,35 @@
-import { Button, Flexbox } from '@lobehub/ui';
+import { Button, Flexbox, Tooltip } from '@lobehub/ui';
 import { Plus } from 'lucide-react';
-import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useAgentStore } from '@/store/agent';
-import { useHomeStore } from '@/store/home';
-import { useServerConfigStore } from '@/store/serverConfig';
+import { useCreateAgent } from '../../useCreateAgent';
 
-const AddButton = memo<{ groupId?: string }>(({ groupId }) => {
+const AddButton = ({
+  groupId,
+  visibility,
+}: {
+  groupId?: string;
+  visibility?: 'private' | 'public';
+}) => {
   const { t } = useTranslation('chat');
-  const createAgent = useAgentStore((s) => s.createAgent);
-  const refreshAgentList = useHomeStore((s) => s.refreshAgentList);
-  const mobile = useServerConfigStore((s) => s.isMobile);
-  const [loading, setLoading] = useState(false);
-
+  const { allowed, create, loading, reason } = useCreateAgent();
   return (
-    <Flexbox flex={1} padding={mobile ? 16 : 0}>
-      <Button
-        block
-        icon={Plus}
-        loading={loading}
-        type={'fill'}
-        style={{
-          marginTop: 8,
-        }}
-        onClick={async () => {
-          setLoading(true);
-          try {
-            await createAgent({ groupId });
-            await refreshAgentList();
-          } finally {
-            setLoading(false);
-          }
-        }}
-      >
-        {t('newAgent')}
-      </Button>
+    <Flexbox flex={1} padding={16}>
+      <Tooltip title={reason}>
+        <Button
+          block
+          aria-description={reason}
+          disabled={!allowed || loading}
+          icon={Plus}
+          loading={loading}
+          style={{ marginTop: 8 }}
+          type={'fill'}
+          onClick={() => create({ groupId, visibility })}
+        >
+          {t('newAgent')}
+        </Button>
+      </Tooltip>
     </Flexbox>
   );
-});
-
+};
 export default AddButton;

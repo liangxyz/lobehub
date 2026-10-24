@@ -1,6 +1,6 @@
 import type { ConversationContext, UIChatMessage } from '@lobechat/types';
 
-import { IndexedDBQueryProjectionStorage } from '@/libs/queryProjectionStorage';
+import { AppIndexedDBStorage } from '@/libs/replica';
 import {
   cacheScope,
   defineReplica,
@@ -55,6 +55,7 @@ const isSyntheticGroupNode = (message: UIChatMessage) =>
 const isPersistableContext = (context: ConversationContext) => {
   if (!context.agentId || !context.topicId) return false;
   if (context.agentShareId || context.topicShareId) return false;
+  if (context.messageReadMode === 'forward') return false;
   return messageMapKey(context) === canonicalBucketOf(context);
 };
 
@@ -76,12 +77,17 @@ const canonicalBucketOf = (context: {
  * Entry identity of a conversation. Persistable conversations key by the
  * canonical read context (`p:`), so the route loader and every surface showing
  * the same conversation address one row; the rest key by their bucket (`m:`)
- * and stay in memory.
+ * and stay in memory. A forward transcript is its own entry: its pages run the
+ * other way, so it never shares paging with the newest-first one.
  */
 export const conversationMessagesKey = (context: ConversationContext) =>
   isPersistableContext(context)
     ? `p:${JSON.stringify(normalizeMessageListQueryContext(context))}`
-    : `m:${JSON.stringify({ bucket: messageMapKey(context), threadId: context.threadId ?? null })}`;
+    : `m:${JSON.stringify({
+        bucket: messageMapKey(context),
+        threadId: context.threadId ?? null,
+        ...(context.messageReadMode === 'forward' && { paging: 'forward' }),
+      })}`;
 
 /**
  * The canonical read context a persisted (`p:`) entry key was built from;
@@ -98,8 +104,11 @@ export const persistedContextOf = (key: string): CanonicalMessageListContext | u
 export const transcriptBucketOf = (key: string): { bucket: string; threadId: string | null } => {
   const value = JSON.parse(key.slice(2));
   if (key.startsWith('p:')) return { bucket: canonicalBucketOf(value), threadId: value.threadId };
-  return value;
+  return { bucket: value.bucket, threadId: value.threadId };
 };
+
+const isForwardTranscriptKey = (key: string) =>
+  key.startsWith('m:') && JSON.parse(key.slice(2)).paging === 'forward';
 
 const transcriptPaging: ReplicaPagingConfig<UIChatMessage, MessageRoundCursor> = {
   // Only reached for read paths without round cursors (threads, shared
@@ -109,6 +118,7 @@ const transcriptPaging: ReplicaPagingConfig<UIChatMessage, MessageRoundCursor> =
     id: message.id,
   }),
   direction: 'backward',
+  directionOf: (key) => (isForwardTranscriptKey(key) ? 'forward' : 'backward'),
   getId: (message) => message.id,
   isCursorable: (message) => !isSyntheticGroupNode(message) && !isLocalOnlyMessage(message),
   mode: 'cursor',
@@ -269,7 +279,7 @@ export const toolResultPayloadResource = defineReplica<string, ToolResultPayload
   name: TOOL_RESULT_PAYLOAD_NAME,
   persist: { maxEntries: TOOL_RESULT_PAYLOAD_MAX_PERSISTED_ENTRIES },
   storage: new SizeCappedPayloadStorage(
-    new IndexedDBQueryProjectionStorage<ToolResultPayloadRead>({
+    new AppIndexedDBStorage<ToolResultPayloadRead>({
       namespace: `replica:${TOOL_RESULT_PAYLOAD_NAME}:v${TOOL_RESULT_PAYLOAD_VERSION}`,
     }),
     TOOL_RESULT_PAYLOAD_MAX_PERSISTED_CHARS,

@@ -23,9 +23,15 @@ const RenameGroupContent = memo<RenameGroupContentProps>(({ id }) => {
   const { t } = useTranslation(['chat', 'common']);
   const { close } = useModalContext();
 
-  const updateGroupName = useHomeStore((s) => s.updateGroupName);
-  const groups = useHomeStore(homeAgentListSelectors.agentGroups, isEqual);
-  const group = groups.find((g) => g.id === id);
+  const updateSessionGroupName = useHomeStore((s) => s.updateGroupName);
+  const group = useHomeStore(
+    (s) =>
+      [
+        ...homeAgentListSelectors.agentGroups(s),
+        ...homeAgentListSelectors.privateAgentGroups(s),
+      ].find((group) => group.id === id),
+    isEqual,
+  );
 
   const [input, setInput] = useState<string>(group?.name ?? '');
   const [loading, setLoading] = useState(false);
@@ -36,7 +42,7 @@ const RenameGroupContent = memo<RenameGroupContentProps>(({ id }) => {
 
     setLoading(true);
     try {
-      await updateGroupName(id, input);
+      await updateSessionGroupName(id, input);
       toast.success(t('sessionGroup.renameSuccess'));
       close();
     } finally {

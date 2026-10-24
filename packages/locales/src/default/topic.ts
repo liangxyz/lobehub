@@ -8,6 +8,7 @@ export default {
   'reportProblem.attachments.hint':
     'Optional · Up to 5 files, 4 MB total. Attachments are sent to the support team.',
   'reportProblem.attachments.add': 'Add attachments',
+  'reportProblem.attachments.trigger': 'Paste, drop, or click to add files',
   'actions.addNewTopic': 'Start New Topic',
   'actions.addNewTopicInProject': 'Start new topic in {{directory}}',
   'actions.autoRename': 'Smart Rename',
@@ -106,6 +107,11 @@ export default {
   'metaCard.pr.closed': 'Closed',
   'metaCard.pr.merged': 'Merged',
   'metaCard.pr.open': 'Open',
+  'filter.allTopics': 'All',
+  'filter.byDevice': 'Device: {{value}}',
+  'filter.byStatus': 'Status: {{value}}',
+  'filter.clear': 'Clear filters',
+  'filter.emptyFiltered': 'No topics match these filters',
   'filter.filter': 'Filter',
   'filter.groupMode.byAgent': 'By agent',
   'filter.groupMode.byDevice': 'By device',
@@ -113,6 +119,8 @@ export default {
   'filter.groupMode.byStatus': 'By status',
   'filter.groupMode.byTime': 'By time',
   'filter.groupMode.flat': 'Flat',
+  'filter.noDevice': 'No device',
+  'filter.onlyMine': 'Only my topics',
   'filter.organize': 'Organize',
   'filter.showCompleted': 'Include Archived',
   'filter.sort': 'Sort by',
@@ -297,6 +305,8 @@ export default {
   'newTopic': 'New Topic',
   'reportProblem.desc':
     "This topic's IDs and your app environment are sent to the LobeHub support team, who can then look into this topic's runs, errors and conversation.",
+  'reportProblem.recentDesc':
+    "Your most recent topic's IDs and your app environment are sent to the LobeHub support team, who can then look into that topic's runs, errors and conversation.",
   'reportProblem.failed': "Couldn't submit the report. Try again.",
   'reportProblem.rateLimited': "You've sent a lot of reports recently. Try again later.",
   'reportProblem.placeholder': 'What went wrong? (optional)',

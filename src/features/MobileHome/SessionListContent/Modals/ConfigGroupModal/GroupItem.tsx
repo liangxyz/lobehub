@@ -11,6 +11,7 @@ import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useHomeStore } from '@/store/home';
+import { type SessionGroupItemBase } from '@/types/session';
 
 const styles = createStaticStyles(({ css }) => ({
   content: css`
@@ -26,17 +27,18 @@ const styles = createStaticStyles(({ css }) => ({
   `,
 }));
 
-interface GroupItemProps {
+interface GroupItemProps extends SessionGroupItemBase {
   disabled?: boolean;
-  id: string;
-  name: string;
 }
 
 const GroupItem = memo<GroupItemProps>(({ id, name, disabled = false }) => {
   const { t } = useTranslation(['chat', 'common']);
 
   const [editing, setEditing] = useState(false);
-  const [updateGroupName, removeGroup] = useHomeStore((s) => [s.updateGroupName, s.removeGroup]);
+  const [updateSessionGroupName, removeSessionGroup] = useHomeStore((s) => [
+    s.updateGroupName,
+    s.removeGroup,
+  ]);
 
   return (
     <>
@@ -67,7 +69,7 @@ const GroupItem = memo<GroupItemProps>(({ id, name, disabled = false }) => {
                 },
                 okText: t('delete', { ns: 'common' }),
                 onOk: async () => {
-                  await removeGroup(id);
+                  await removeSessionGroup(id);
                 },
                 title: t('delete', { ns: 'common' }),
               });
@@ -88,7 +90,7 @@ const GroupItem = memo<GroupItemProps>(({ id, name, disabled = false }) => {
               if (input.length === 0 || input.length > 20 || input.trim() === '')
                 return toast.warning(t('sessionGroup.tooLong'));
 
-              await updateGroupName(id, input);
+              await updateSessionGroupName(id, input);
               toast.success(t('sessionGroup.renameSuccess'));
             }
             setEditing(false);

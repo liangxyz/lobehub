@@ -25,19 +25,29 @@ const styles = createStaticStyles(({ css, cssVar }) => ({
   `,
 }));
 
-const ConfigGroupModal = memo<{ onCancel?: () => void; open?: boolean }>(({ open, onCancel }) => {
+interface ConfigGroupModalProps {
+  onCancel?: () => void;
+  open?: boolean;
+  scope?: 'private' | 'public';
+}
+
+const ConfigGroupModal = memo<ConfigGroupModalProps>(({ open, onCancel, scope = 'public' }) => {
   const { t } = useTranslation('chat');
   const { allowed: canCreate, reason: createReason } = usePermission('create_content');
   const { allowed: canEdit } = usePermission('edit_own_content');
-  const agentGroups = useHomeStore(homeAgentListSelectors.agentGroups, isEqual);
-  const [addGroup, updateGroupSort] = useHomeStore((s) => [s.addGroup, s.updateGroupSort]);
+  const sessionGroupItems = useHomeStore(
+    (s) =>
+      (scope === 'private'
+        ? homeAgentListSelectors.privateAgentGroups(s)
+        : homeAgentListSelectors.agentGroups(s)
+      ).map(({ id, name, sort }) => ({ id, name, sort })),
+    isEqual,
+  );
+  const [addSessionGroup, updateSessionGroupSort] = useHomeStore((s) => [
+    s.addGroup,
+    s.updateGroupSort,
+  ]);
   const [loading, setLoading] = useState(false);
-
-  const items: SessionGroupItemBase[] = agentGroups.map((g) => ({
-    children: g.items,
-    id: g.id,
-    name: g.name,
-  }));
 
   return (
     <ImperativeModal
@@ -50,7 +60,7 @@ const ConfigGroupModal = memo<{ onCancel?: () => void; open?: boolean }>(({ open
     >
       <Flexbox>
         <SortableList
-          items={items}
+          items={sessionGroupItems}
           renderItem={(item: SessionGroupItemBase) => (
             <SortableList.Item
               horizontal
@@ -63,9 +73,9 @@ const ConfigGroupModal = memo<{ onCancel?: () => void; open?: boolean }>(({ open
               <GroupItem {...item} disabled={!canEdit} />
             </SortableList.Item>
           )}
-          onChange={(newItems: SessionGroupItemBase[]) => {
+          onChange={(items: SessionGroupItemBase[]) => {
             if (!canEdit) return;
-            updateGroupSort(newItems);
+            updateSessionGroupSort(items);
           }}
         />
         <Button
@@ -77,8 +87,11 @@ const ConfigGroupModal = memo<{ onCancel?: () => void; open?: boolean }>(({ open
           onClick={async () => {
             if (!canCreate) return;
             setLoading(true);
-            await addGroup(t('sessionGroup.newGroup'));
-            setLoading(false);
+            try {
+              await addSessionGroup(t('sessionGroup.newGroup'), scope);
+            } finally {
+              setLoading(false);
+            }
           }}
         >
           {t('sessionGroup.createGroup')}

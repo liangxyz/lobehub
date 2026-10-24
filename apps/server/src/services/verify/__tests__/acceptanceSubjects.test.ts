@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   documentFindById: vi.fn(),
   ensureForSubject: vi.fn(),
   goalFindByNode: vi.fn(),
+  projectFindById: vi.fn(),
   taskResolve: vi.fn(),
   taskTopicFindByTopicId: vi.fn(),
   topicFindOwnTopicById: vi.fn(),
@@ -44,6 +45,11 @@ vi.mock('@/database/models/document', () => ({
 vi.mock('@/database/models/goal', () => ({
   GoalModel: vi.fn(function () {
     return { findByNode: mocks.goalFindByNode };
+  }),
+}));
+vi.mock('@/database/models/project', () => ({
+  ProjectModel: vi.fn(function () {
+    return { findById: mocks.projectFindById };
   }),
 }));
 vi.mock('@/server/services/task', () => ({ TaskService: vi.fn() }));
@@ -134,6 +140,78 @@ describe('AcceptanceService subjects', () => {
       });
     });
 
+    it("files a project conversation topic under the topic's own project", async () => {
+      mocks.topicFindOwnTopicById.mockResolvedValue({
+        projectId: 'project-topic',
+        title: 'Project chat',
+      });
+
+      await service().ensureForSubject('topic', 'topic-1');
+
+      expect(mocks.taskTopicFindByTopicId).not.toHaveBeenCalled();
+      expect(mocks.ensureForSubject).toHaveBeenCalledWith('topic', 'topic-1', {
+        config: undefined,
+        projectId: 'project-topic',
+        requirement: undefined,
+      });
+    });
+
+    it('files under a project the caller names instead of the one the subject implies', async () => {
+      mocks.topicFindOwnTopicById.mockResolvedValue({
+        projectId: 'project-topic',
+        title: 'Project chat',
+      });
+      mocks.projectFindById.mockResolvedValue({ id: 'project-named' });
+
+      await service().ensureForSubject('topic', 'topic-1', { projectId: 'project-named' });
+
+      expect(mocks.projectFindById).toHaveBeenCalledWith('project-named');
+      expect(mocks.ensureForSubject).toHaveBeenCalledWith('topic', 'topic-1', {
+        config: undefined,
+        projectId: 'project-named',
+        requirement: undefined,
+      });
+    });
+
+    it("keeps the subject's own project over the repository's fallback", async () => {
+      mocks.topicFindOwnTopicById.mockResolvedValue({
+        projectId: 'project-topic',
+        title: 'Project chat',
+      });
+
+      await service().ensureForSubject('topic', 'topic-1', { fallbackProjectId: 'project-repo' });
+
+      expect(mocks.projectFindById).not.toHaveBeenCalled();
+      expect(mocks.ensureForSubject).toHaveBeenCalledWith(
+        'topic',
+        'topic-1',
+        expect.objectContaining({ projectId: 'project-topic' }),
+      );
+    });
+
+    it("files under the repository's fallback when the subject implies no project", async () => {
+      mocks.projectFindById.mockResolvedValue({ id: 'project-repo' });
+
+      await service().ensureForSubject('standalone', 'standalone-1', {
+        fallbackProjectId: 'project-repo',
+      });
+
+      expect(mocks.ensureForSubject).toHaveBeenCalledWith(
+        'standalone',
+        'standalone-1',
+        expect.objectContaining({ projectId: 'project-repo' }),
+      );
+    });
+
+    it('rejects a named project the caller cannot read, before creating anything', async () => {
+      mocks.projectFindById.mockResolvedValue(null);
+
+      await expect(
+        service().ensureForSubject('standalone', 'standalone-1', { projectId: 'project-x' }),
+      ).rejects.toThrow('project "project-x" not found in the current workspace');
+      expect(mocks.ensureForSubject).not.toHaveBeenCalled();
+    });
+
     it('stores a standalone title as metadata without a project', async () => {
       await service().ensureForSubject('standalone', 'standalone-1', { title: 'Report' });
 
@@ -145,6 +223,23 @@ describe('AcceptanceService subjects', () => {
       });
     });
 
+    it('keys a task addressed by its identifier under the task id', async () => {
+      mocks.taskResolve.mockResolvedValue({
+        id: 'task_abc',
+        identifier: 'T-898',
+        name: 'Fix docs',
+        projectId: 'project-task',
+      });
+
+      await service().ensureForSubject('task', 'T-898', { requirement: 'req' });
+
+      expect(mocks.ensureForSubject).toHaveBeenCalledWith('task', 'task_abc', {
+        config: undefined,
+        projectId: 'project-task',
+        requirement: 'req',
+      });
+    });
+
     it('rejects a subject missing from the current workspace', async () => {
       mocks.taskResolve.mockResolvedValue(undefined);
 
@@ -152,6 +247,22 @@ describe('AcceptanceService subjects', () => {
         'task "task-x" not found in the current workspace',
       );
       expect(mocks.ensureForSubject).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('resolveCanonicalSubjectId', () => {
+    it('maps a task identifier to the task id', async () => {
+      mocks.taskResolve.mockResolvedValue({ id: 'task_abc', identifier: 'T-898' });
+
+      await expect(service().resolveCanonicalSubjectId('task', 'T-898')).resolves.toBe('task_abc');
+    });
+
+    it('passes an unknown task and non-task subjects through', async () => {
+      mocks.taskResolve.mockResolvedValue(null);
+
+      await expect(service().resolveCanonicalSubjectId('task', 'T-404')).resolves.toBe('T-404');
+      await expect(service().resolveCanonicalSubjectId('topic', 'tpc_1')).resolves.toBe('tpc_1');
+      expect(mocks.taskResolve).toHaveBeenCalledTimes(1);
     });
   });
 });

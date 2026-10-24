@@ -19,6 +19,16 @@ export const subjectRouter = router({
          * explicitly requested subject is always kept exact.
          */
         foldTaskRunTopic: z.boolean().optional(),
+        /**
+         * The project the delivery's repository declares — used only when
+         * the subject implies none. Only fills an aggregate that has none yet.
+         */
+        fallbackProjectId: z.string().min(1).optional(),
+        /**
+         * A project the caller names, overriding the one the subject implies.
+         * Only fills an aggregate that has none yet.
+         */
+        projectId: z.string().min(1).optional(),
         requirement: z.string().max(2000).optional(),
         subjectId: z.string(),
         subjectType: subjectTypeSchema,
@@ -26,7 +36,12 @@ export const subjectRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const defaults = { requirement: input.requirement, title: input.title };
+      const defaults = {
+        fallbackProjectId: input.fallbackProjectId,
+        projectId: input.projectId,
+        requirement: input.requirement,
+        title: input.title,
+      };
       try {
         return input.foldTaskRunTopic
           ? await ctx.acceptanceService.ensureForIngest(
@@ -50,9 +65,14 @@ export const subjectRouter = router({
   getBySubject: acceptanceProcedure
     .input(z.object({ subjectId: z.string(), subjectType: subjectTypeSchema }))
     .query(async ({ ctx, input }) => {
-      const acceptance = await ctx.acceptanceService.acceptanceModel.findBySubject(
+      // `task:T-898` and `task:task_xxx` name the same aggregate.
+      const subjectId = await ctx.acceptanceService.resolveCanonicalSubjectId(
         input.subjectType,
         input.subjectId,
+      );
+      const acceptance = await ctx.acceptanceService.acceptanceModel.findBySubject(
+        input.subjectType,
+        subjectId,
       );
       if (!acceptance) return null;
 

@@ -71,6 +71,7 @@ export default {
   'features.topicBugReport.title': 'Report Bug',
   'group.desktop': 'Desktop',
   'group.general': 'General',
+  'group.workspace': 'Workspace',
   'stage.alpha.desc':
     'Internal testing only. Not recommended for daily use yet — it may change or break at any time.',
   'stage.alpha.label': 'Alpha',

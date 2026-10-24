@@ -4,21 +4,20 @@ import { ActionIcon, Flexbox } from '@lobehub/ui';
 import { ChatHeader } from '@lobehub/ui/mobile';
 import { MessageSquarePlus } from 'lucide-react';
 import { memo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 
 import { ProductLogo } from '@/components/Branding';
-import { AGENT_CHAT_URL } from '@/const/index';
 import { MOBILE_HEADER_ICON_SIZE } from '@/const/layoutTokens';
 import UserAvatar from '@/features/User/UserAvatar';
-import { useAgentStore } from '@/store/agent';
-import { useHomeStore } from '@/store/home';
 import { mobileHeaderSticky } from '@/styles/mobileHeader';
 
+import { useCreateAgent } from '../useCreateAgent';
 import { styles } from './SessionHeader/style';
 
 const Header = memo(() => {
-  const createAgent = useAgentStore((s) => s.createAgent);
-  const refreshAgentList = useHomeStore((s) => s.refreshAgentList);
+  const { t } = useTranslation('chat');
+  const { allowed, create, loading, reason } = useCreateAgent();
   const navigate = useNavigate();
 
   return (
@@ -32,15 +31,14 @@ const Header = memo(() => {
       }
       right={
         <ActionIcon
+          aria-description={reason}
+          aria-label={t('newAgent')}
+          disabled={!allowed || loading}
           icon={MessageSquarePlus}
+          loading={loading}
           size={MOBILE_HEADER_ICON_SIZE}
-          onClick={async () => {
-            const result = await createAgent({});
-            await refreshAgentList();
-            if (result?.agentId) {
-              navigate(AGENT_CHAT_URL(result.agentId, true));
-            }
-          }}
+          title={reason ?? t('newAgent')}
+          onClick={() => create()}
         />
       }
     />

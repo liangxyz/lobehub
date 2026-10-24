@@ -26,7 +26,16 @@ import {
   useProjectStore,
 } from './store';
 
-const mocks = vi.hoisted(() => ({ activeWorkspaceId: null as string | null }));
+const mocks = vi.hoisted(() => ({
+  activeWorkspaceId: null as string | null,
+  refreshProjectTopics: vi.fn(),
+}));
+
+vi.mock('@/store/projectWorkingDirectory', () => ({
+  useProjectDirectoryStore: {
+    getState: () => ({ refreshProjectTopics: mocks.refreshProjectTopics }),
+  },
+}));
 
 vi.mock('@/business/client/hooks/useActiveWorkspaceId', () => ({
   getActiveWorkspaceId: () => mocks.activeWorkspaceId,
@@ -35,11 +44,15 @@ vi.mock('@/business/client/hooks/useActiveWorkspaceId', () => ({
 
 vi.mock('@/services/project', () => ({
   projectService: {
+    addAgent: vi.fn(),
     create: vi.fn(),
     delete: vi.fn(),
     detail: vi.fn(),
     listAll: vi.fn(),
+    removeAgent: vi.fn(),
+    replaceCoordinator: vi.fn(),
     update: vi.fn(),
+    updateKnowledgeBase: vi.fn(),
   },
 }));
 
@@ -230,6 +243,80 @@ describe('project store replicas', () => {
 
       expect(useProjectStore.getState().projectListMap.all.map((p) => p.id)).toEqual(['p2']);
       expect(useProjectStore.getState().projectDetailMap.launch).toBeUndefined();
+    });
+
+    it('drops a removed member from the page at once, then reconciles with the server', async () => {
+      const original = seed();
+      await waitSeeded();
+      const member = { agent: { id: 'agent-1' }, binding: { agentId: 'agent-1' } };
+      act(() =>
+        useProjectStore.setState({
+          projectDetailMap: {
+            launch: { ...detailOf(original), agents: [member] } as unknown as ProjectDetail,
+          },
+        }),
+      );
+      let resolveRemove!: (value: unknown) => void;
+      vi.mocked(projectService.removeAgent).mockImplementation(
+        () => new Promise((resolve) => (resolveRemove = resolve)) as any,
+      );
+      vi.mocked(projectService.detail).mockResolvedValue(
+        ok({ ...detailOf(original), agents: [] }) as any,
+      );
+
+      const operation = useProjectStore.getState().removeProjectAgent('p1', 'agent-1');
+      expect(useProjectStore.getState().projectDetailMap.launch.agents).toEqual([]);
+
+      await act(async () => {
+        resolveRemove(ok(true));
+        await operation;
+      });
+      expect(projectService.removeAgent).toHaveBeenCalledWith('p1', 'agent-1');
+      expect(projectService.detail).toHaveBeenLastCalledWith('launch');
+    });
+
+    it('reloads the page, the list and the conversations once the main agent is replaced', async () => {
+      const original = seed();
+      await waitSeeded();
+      vi.mocked(projectService.replaceCoordinator).mockResolvedValue(ok(original) as any);
+      vi.mocked(projectService.detail).mockResolvedValue(
+        ok({ ...detailOf(original), project: { ...original, coordinatorAgentId: 'lead' } }) as any,
+      );
+      vi.mocked(projectService.listAll).mockClear();
+
+      await act(() => useProjectStore.getState().replaceProjectCoordinator('p1', 'lead'));
+
+      expect(projectService.replaceCoordinator).toHaveBeenCalledWith('p1', 'lead');
+      expect(useProjectStore.getState().projectDetailMap.launch.project.coordinatorAgentId).toBe(
+        'lead',
+      );
+      await waitFor(() => expect(projectService.listAll).toHaveBeenCalled());
+      expect(mocks.refreshProjectTopics).toHaveBeenCalledWith('p1');
+    });
+
+    it('restores a knowledge toggle from the server when the update fails', async () => {
+      const original = seed();
+      await waitSeeded();
+      const binding = {
+        binding: { enabled: true, knowledgeBaseId: 'kb-1' },
+        knowledgeBase: { id: 'kb-1' },
+      };
+      const seeded = { ...detailOf(original), knowledgeBases: [binding] };
+      act(() =>
+        useProjectStore.setState({
+          projectDetailMap: { launch: seeded as unknown as ProjectDetail },
+        }),
+      );
+      vi.mocked(projectService.updateKnowledgeBase).mockRejectedValue(new Error('denied'));
+      vi.mocked(projectService.detail).mockResolvedValue(ok(seeded) as any);
+
+      await expect(
+        useProjectStore.getState().updateProjectKnowledgeBase('p1', 'kb-1', { enabled: false }),
+      ).rejects.toThrow('denied');
+
+      expect(
+        useProjectStore.getState().projectDetailMap.launch.knowledgeBases?.[0].binding.enabled,
+      ).toBe(true);
     });
 
     it('creates the project in the active workspace and shows it at the top', async () => {

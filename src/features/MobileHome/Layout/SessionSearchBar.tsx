@@ -10,24 +10,23 @@ import { useHomeStore } from '@/store/home';
 import { useUserStore } from '@/store/user';
 import { settingsSelectors } from '@/store/user/selectors';
 
+import { useAgentSearch } from './AgentSearchContext';
+
 const SessionSearchBar = memo<{ mobile?: boolean }>(({ mobile }) => {
   const { t } = useTranslation('chat');
   const isLoaded = useUserStore((s) => s.isLoaded);
   const hotkey = useUserStore(settingsSelectors.getHotkeyById(HotkeyEnum.Search));
 
-  const [keywords, useSearchAgents, updateAgentSearchKeywords] = useHomeStore((s) => [
-    s.agentSearchKeywords,
-    s.useSearchAgents,
-    s.updateAgentSearchKeywords,
-  ]);
+  const { keywords, setKeywords: updateSearchKeywords } = useAgentSearch();
+  const useSearchAgents = useHomeStore((s) => s.useSearchAgents);
 
-  const { isValidating } = useSearchAgents(keywords);
+  const { isValidating } = useSearchAgents(keywords?.trim() || undefined);
 
   const handleChange = useCallback(
     (e: ChangeEvent<HTMLInputElement>) => {
-      updateAgentSearchKeywords(e.target.value);
+      updateSearchKeywords(e.target.value);
     },
-    [updateAgentSearchKeywords],
+    [updateSearchKeywords],
   );
 
   return (
@@ -38,7 +37,7 @@ const SessionSearchBar = memo<{ mobile?: boolean }>(({ mobile }) => {
       placeholder={t('searchAgentPlaceholder')}
       shortKey={hotkey}
       spotlight={!mobile}
-      value={keywords || ''}
+      value={keywords}
       variant={'filled'}
       onChange={handleChange}
     />

@@ -46,7 +46,9 @@ import { reviewChecks } from './reviewChecks';
 import { statusFromRound } from './statusRollup';
 import {
   type AcceptanceSubjectSummary,
+  assertProjectExists,
   assertSubjectExists,
+  resolveCanonicalSubjectId,
   resolveRunTopicTaskId,
   resolveSubject,
   resolveSubjectProjectId,
@@ -129,15 +131,35 @@ export class AcceptanceService {
     };
   }
 
-  /** Get (or create) the aggregate for a subject, validating the subject first. */
+  /**
+   * Get (or create) the aggregate for a subject, validating the subject first.
+   *
+   * Project precedence: a `projectId` the caller names (a CLI `--project`),
+   * then the one the subject implies, then `fallbackProjectId` — the project
+   * the delivery's repository declares, a default too broad to override a
+   * task's or conversation's own project. Either way it only files an
+   * aggregate that has no project yet: a delivery already grouped is moved by
+   * hand, never by the next round.
+   */
   ensureForSubject = async (
     subjectType: AcceptanceSubjectType,
     subjectId: string,
-    defaults?: { config?: AcceptanceConfig; requirement?: string; title?: string },
+    defaults?: {
+      config?: AcceptanceConfig;
+      fallbackProjectId?: string;
+      projectId?: string;
+      requirement?: string;
+      title?: string;
+    },
   ): Promise<AcceptanceItem> => {
-    await assertSubjectExists(this.deps, subjectType, subjectId);
-    const projectId = await resolveSubjectProjectId(this.deps, subjectType, subjectId);
-    return this.acceptanceModel.ensureForSubject(subjectType, subjectId, {
+    const canonicalId = await assertSubjectExists(this.deps, subjectType, subjectId);
+    const projectId = defaults?.projectId
+      ? await assertProjectExists(this.deps, defaults.projectId)
+      : ((await resolveSubjectProjectId(this.deps, subjectType, canonicalId)) ??
+        (defaults?.fallbackProjectId
+          ? await assertProjectExists(this.deps, defaults.fallbackProjectId)
+          : null));
+    return this.acceptanceModel.ensureForSubject(subjectType, canonicalId, {
       config: defaults?.config,
       projectId,
       requirement: defaults?.requirement,
@@ -159,7 +181,12 @@ export class AcceptanceService {
   ensureForIngest = async (
     subjectType: AcceptanceSubjectType,
     subjectId: string,
-    defaults?: { requirement?: string; title?: string },
+    defaults?: {
+      fallbackProjectId?: string;
+      projectId?: string;
+      requirement?: string;
+      title?: string;
+    },
   ): Promise<AcceptanceItem> => {
     const taskId =
       subjectType === 'topic' ? await resolveRunTopicTaskId(this.deps, subjectId) : undefined;
@@ -186,6 +213,26 @@ export class AcceptanceService {
     return this.attachResolvedRun(runId, acceptance);
   };
 
+  /**
+   * File an ungrouped acceptance under the project its subject implies when a
+   * round lands. Appending by acceptance id skips `ensureForSubject`, so an
+   * aggregate created before its subject carried a project would otherwise
+   * stay ungrouped on every re-verification. Best effort: filing never blocks
+   * a round.
+   */
+  private fileUnderSubjectProject = async (acceptance: AcceptanceItem) => {
+    try {
+      const projectId = await resolveSubjectProjectId(
+        this.deps,
+        acceptance.subjectType,
+        acceptance.subjectId,
+      );
+      if (projectId) await this.acceptanceModel.fillProject(acceptance.id, projectId);
+    } catch (error) {
+      log('could not file acceptance %s under its subject project: %O', acceptance.id, error);
+    }
+  };
+
   private attachResolvedRun = async (
     runId: string,
     acceptance: AcceptanceItem,
@@ -210,6 +257,7 @@ export class AcceptanceService {
     }
 
     await assertPlanLeavesAcceptedChecksAlone(this.deps, existing, acceptanceId);
+    if (!acceptance.projectId) await this.fileUnderSubjectProject(acceptance);
 
     // A round that is still only planned has nothing to preserve: the incoming
     // run folds into it instead of pushing the ledger to yet another number.
@@ -339,12 +387,20 @@ export class AcceptanceService {
     // transition: a completion that failed once is retried by the next round,
     // report or flow event instead of leaving the task open for good. An
     // already-completed task is a no-op.
+    //
+    // The round records the Agent Run that published it. When that run is the
+    // task's own (an agent ingesting acceptance for the task it executes), the
+    // completion waits for the run to end rather than interrupting it.
     if (
       status === 'delivered' &&
       (!current.status || current.status === 'delivered') &&
       acceptance.subjectType === 'task'
     )
-      await this.completeTaskForDelivery(acceptanceId, acceptance.subjectId);
+      await this.completeTaskForDelivery(
+        acceptanceId,
+        acceptance.subjectId,
+        current.metadata?.origin?.operationId,
+      );
     return status;
   };
 
@@ -534,6 +590,9 @@ export class AcceptanceService {
   /** Best-effort subject header info for the bundle (title may be gone). */
   resolveSubject = (...args: WithoutDeps<typeof resolveSubject>) =>
     resolveSubject(this.deps, ...args);
+
+  resolveCanonicalSubjectId = (...args: WithoutDeps<typeof resolveCanonicalSubjectId>) =>
+    resolveCanonicalSubjectId(this.deps, ...args);
 
   private resolveSubjects = (...args: WithoutDeps<typeof resolveSubjects>) =>
     resolveSubjects(this.deps, ...args);
