@@ -1,4 +1,3 @@
-import { DEFAULT_AVATAR } from '@lobechat/const';
 import { createStaticStyles, cx } from '@lobehub/ui';
 import { useHover } from 'ahooks';
 import { memo, useMemo, useRef } from 'react';
@@ -29,14 +28,6 @@ const styles = createStaticStyles(({ css, cssVar }) => {
   };
 });
 
-export const resolveSessionAvatar = (
-  avatar?: string | { avatar: string; background?: string }[] | null,
-): string => {
-  if (typeof avatar === 'string' && avatar) return avatar;
-  if (Array.isArray(avatar) && avatar.length > 0 && avatar[0]?.avatar) return avatar[0].avatar;
-  return DEFAULT_AVATAR;
-};
-
 const ListItem = memo<
   Omit<ListItemProps, 'avatar' | 'key'> & {
     /** Seeds the generated avatar of an agent without one of its own. */
@@ -56,8 +47,8 @@ const ListItem = memo<
       return <GroupAvatar avatars={avatars} size={40} />;
     }
 
-    // For regular sessions/agents, resolve a null-safe avatar value
-    const agentAvatar = resolveSessionAvatar(avatar);
+    // `avatar` may be undefined (agent without one); AgentAvatar draws the generated character
+    const agentAvatar = typeof avatar === 'string' ? avatar : avatar?.[0]?.avatar;
 
     return (
       <AgentAvatar
