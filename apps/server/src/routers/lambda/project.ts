@@ -174,8 +174,9 @@ export const projectRouter = router({
     .input(
       z.object({
         avatar: z.string().optional(),
+        coordinatorAgentId: z.string().optional(),
         description: z.string().optional(),
-        identifier: projectIdentifierInput,
+        identifier: projectIdentifierInput.optional(),
         name: z.string().min(1).max(255),
         slug: projectSlugInput.optional(),
         visibility: z.enum(PROJECT_VISIBILITIES).optional(),
@@ -183,6 +184,9 @@ export const projectRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       try {
+        if (input.coordinatorAgentId) {
+          await assertResourceUsable(ctx, 'agent', input.coordinatorAgentId);
+        }
         return {
           data: await withMainAgent(ctx.projectModel, await ctx.projectModel.create(input)),
           message: 'Project created',
@@ -384,6 +388,20 @@ export const projectRouter = router({
       mapProjectError(error, 'reopen');
     }
   }),
+
+  /** Move one project in the scope's shared manual order, next to another project. */
+  move: projectWriteProcedure
+    .input(
+      idInput.and(z.union([z.object({ beforeId: z.string() }), z.object({ afterId: z.string() })])),
+    )
+    .mutation(async ({ ctx, input: { id, ...anchor } }) => {
+      try {
+        await ctx.projectModel.move(id, anchor);
+        return { message: 'Project moved', success: true };
+      } catch (error) {
+        mapProjectError(error, 'move');
+      }
+    }),
 
   requestCompletion: projectWriteProcedure.input(idInput).mutation(async ({ ctx, input }) => {
     try {

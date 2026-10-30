@@ -23,6 +23,13 @@ describe('resourcePath', () => {
       resourcePath.message({ agentId: 'agt_1', id: 'msg_1', topicId: 'tpc_1' }),
       '/agent/agt_1/tpc_1#msg_1',
     ],
+    // Group-chat hits carry `groupId` instead of `agentId`; without it the
+    // resolver falls through to a missing agent route and the URL is dropped.
+    [
+      resourcePath.message({ groupId: 'grp_1', id: 'msg_1', topicId: 'tpc_1' }),
+      '/group/grp_1/tpc_1#msg_1',
+    ],
+    [resourcePath.message({ groupId: 'grp_1', id: 'msg_1' }), '/group/grp_1#msg_1'],
     [resourcePath.document({ id: 'docs_1' }), '/page/docs_1'],
     [
       resourcePath.document({ id: 'docs_1', knowledgeBaseId: 'kb_1' }),
@@ -30,7 +37,7 @@ describe('resourcePath', () => {
     ],
     [resourcePath.file({ id: 'file_1' }), '/resource?file=file_1'],
     [resourcePath.dashboard({ id: 'dsh_1', projectId: 'prj_1' }), '/project/prj_1/dashboard/dsh_1'],
-    [resourcePath.task({ identifier: 'T-1', name: 'Ship it' }), '/task/T-1/ship-it'],
+    [resourcePath.task({ id: 'task_1', identifier: 'T-1', name: 'Ship it' }), '/task/T-1/ship-it'],
     [resourcePath.acceptance('acc_1'), '/acceptance/acc_1'],
   ])('builds %s', (actual, expected) => {
     expect(actual).toBe(expected);

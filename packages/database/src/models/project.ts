@@ -21,14 +21,19 @@ import { topics } from '../schemas/topic';
 import { works } from '../schemas/work';
 import type { LobeChatDatabase } from '../type';
 import { joinTopicAgentsToProjects } from '../utils/projectTopicAgents';
+import { topicRunStartedAtColumn } from '../utils/topicRunStartedAt';
 import { buildWorkspacePayload, buildWorkspaceWhere } from '../utils/workspace';
 import { AgentModel } from './agent';
 import { EnvironmentModel } from './environment';
+import { topicHasGoal } from './topicGoal';
 
 export interface CreateProjectInput {
   avatar?: string;
+  /** Lead the project with an existing agent instead of provisioning a dedicated one. */
+  coordinatorAgentId?: string;
   description?: string;
-  identifier: string;
+  /** Task prefix for this project; omit to keep the scope's default prefix. */
+  identifier?: string | null;
   name: string;
   slug?: string;
   visibility?: ProjectVisibility;
@@ -141,27 +146,32 @@ export class ProjectModel {
   }
 
   async create(input: CreateProjectInput) {
-    const identifier = input.identifier.trim().toUpperCase();
-    if (identifier.length < 3 || identifier.length > 6) {
+    const identifier = input.identifier?.trim().toUpperCase() || null;
+    if (identifier && (identifier.length < 3 || identifier.length > 6)) {
       throw new Error('Project identifier must be between 3 and 6 characters');
     }
 
     return this.db.transaction(async (tx) => {
-      const coordinatorConfig = createProjectCoordinatorAgentConfig({
-        avatar: input.avatar,
-        description: input.description,
-        identifier,
-        name: input.name,
-      });
-      const coordinator = await new AgentModel(
-        tx as LobeChatDatabase,
-        this.userId,
-        this.workspaceId,
-      ).create({
-        ...coordinatorConfig,
-        visibility: input.visibility,
-        virtual: true,
-      });
+      const coordinator = input.coordinatorAgentId
+        ? await this.findAccessibleAgent(tx as LobeChatDatabase, input.coordinatorAgentId)
+        : await new AgentModel(tx as LobeChatDatabase, this.userId, this.workspaceId).create({
+            ...createProjectCoordinatorAgentConfig({
+              avatar: input.avatar,
+              description: input.description,
+              identifier,
+              name: input.name,
+            }),
+            visibility: input.visibility,
+            virtual: true,
+          });
+      if (!coordinator) throw new Error('Agent not found');
+      if (input.coordinatorAgentId) {
+        this.assertSharedResource(
+          { visibility: input.visibility ?? 'private', workspaceId: this.workspaceId ?? null },
+          (coordinator as { visibility: string }).visibility,
+          'A shared project only takes shared agents',
+        );
+      }
 
       const [project] = await tx
         .insert(projects)
@@ -369,12 +379,80 @@ export class ProjectModel {
       .from(projects)
       .leftJoin(agents, eq(agents.id, projects.coordinatorAgentId))
       .where(and(this.readable(), statusWhere))
+      // Recently updated first for every caller; the sidebar applies the manual
+      // `sort_order` itself, so the order stays a sidebar view, not the API default.
       .orderBy(desc(projects.updatedAt))
       .limit(limit)
       .offset(offset);
     // Coordinators are virtual agents the client agent list never loads, so the
     // list carries their display meta for the owner column.
     return rows.map(({ coordinatorAgent, project }) => ({ ...project, coordinatorAgent }));
+  }
+
+  /**
+   * Move one project in the scope's shared manual order, placing it directly
+   * before or after `anchorId` (both must be visible to the caller).
+   *
+   * The order spans every project in the scope — including other members'
+   * private ones the caller cannot see — so the move is applied to that full
+   * list and every row is renumbered. Positions never collide across members,
+   * no caller needs to send the whole list, and a per-scope lock makes sure
+   * concurrent moves in one scope apply one after another. `updated_at` is left alone:
+   * moving a project is not an edit, and the "recently updated" order must not
+   * jump.
+   */
+  async move(id: string, anchor: { afterId: string } | { beforeId: string }) {
+    const anchorId = 'beforeId' in anchor ? anchor.beforeId : anchor.afterId;
+    if (anchorId === id) return;
+
+    await this.db.transaction(async (tx) => {
+      // Serialize moves per scope before reading the order. Locking the rows in
+      // the ordered read itself is not enough: under READ COMMITTED a waiting
+      // transaction would return the order it sorted before the wait.
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${`project-order:${this.workspaceId ?? `user:${this.userId}`}`}))`,
+      );
+
+      const visible = await tx
+        .select({ id: projects.id })
+        .from(projects)
+        .where(and(inArray(projects.id, [id, anchorId]), this.manageable()));
+      if (visible.length !== 2) throw new Error('Project not found');
+
+      const scope = buildWorkspaceWhere(
+        { userId: this.userId, workspaceId: this.workspaceId },
+        {
+          isDeleted: projects.isDeleted,
+          userId: projects.userId,
+          workspaceId: projects.workspaceId,
+        },
+      );
+      const rows = await tx
+        .select({ id: projects.id })
+        .from(projects)
+        .where(scope)
+        .orderBy(sql`${projects.sortOrder} ASC NULLS FIRST`, desc(projects.updatedAt));
+
+      // Either project may have been deleted since the check above.
+      const ids = rows.map((row) => row.id);
+      if (!ids.includes(id) || !ids.includes(anchorId)) throw new Error('Project not found');
+
+      const order = ids.filter((rowId) => rowId !== id);
+      const anchorIndex = order.indexOf(anchorId);
+      order.splice('beforeId' in anchor ? anchorIndex : anchorIndex + 1, 0, id);
+
+      const position = sql.join(
+        order.map((rowId, index) => sql`WHEN ${rowId} THEN ${index}`),
+        sql` `,
+      );
+      await tx
+        .update(projects)
+        .set({
+          sortOrder: sql`(CASE ${projects.id} ${position} END)::integer`,
+          updatedAt: sql`${projects.updatedAt}`,
+        })
+        .where(and(inArray(projects.id, order), scope));
+    });
   }
 
   async update(id: string, input: UpdateProjectInput) {
@@ -458,22 +536,27 @@ export class ProjectModel {
     await joinTopicAgentsToProjects(this.db, { projectId });
   }
 
+  private async findAccessibleAgent(db: LobeChatDatabase, agentId: string) {
+    const [agent] = await db
+      .select({ id: agents.id, visibility: agents.visibility })
+      .from(agents)
+      .where(
+        and(
+          eq(agents.id, agentId),
+          buildWorkspaceWhere({ userId: this.userId, workspaceId: this.workspaceId }, agents),
+        ),
+      )
+      .limit(1);
+    return agent ?? null;
+  }
+
   async addAgent(projectId: string, input: ProjectAgentInput) {
     const project = await this.findMembersManageableById(projectId);
     if (!project) return null;
     if (project.coordinatorAgentId === input.agentId) {
       throw new Error('The project coordinator is managed by the project');
     }
-    const [agent] = await this.db
-      .select({ id: agents.id, visibility: agents.visibility })
-      .from(agents)
-      .where(
-        and(
-          eq(agents.id, input.agentId),
-          buildWorkspaceWhere({ userId: this.userId, workspaceId: this.workspaceId }, agents),
-        ),
-      )
-      .limit(1);
+    const agent = await this.findAccessibleAgent(this.db, input.agentId);
     if (!agent) throw new Error('Agent not found');
     this.assertSharedResource(
       project,
@@ -978,15 +1061,29 @@ export class ProjectModel {
         id: topics.id,
         createdAt: topics.createdAt,
         favorite: topics.favorite,
+        hasGoal: topicHasGoal(this.db, scope),
         metadata: topics.metadata,
         trigger: topics.trigger,
         userId: topics.userId,
         title: topics.title,
         status: topics.status,
+        // The project sidebar draws a running row's elapsed clock from this.
+        runStartedAt: topicRunStartedAtColumn(this.db),
         agentId: topics.agentId,
         agentTitle: agents.title,
         agentName: agents.name,
         agentAvatar: agents.avatar,
+        // The agent's execution-target pin, so a sidebar group can tell where
+        // the agent may start without loading every agent's full config.
+        agentExecutionTargetSelectionPolicy: sql<
+          string | null
+        >`${agents.agencyConfig}->>'executionTargetSelectionPolicy'`,
+        agentBoundDeviceId: sql<string | null>`${agents.agencyConfig}->>'boundDeviceId'`,
+        // Lets a row act on its agent's external runtime (Claude Code / Codex)
+        // when that agent's config has never been loaded into the client store.
+        agentHeterogeneousProviderType: sql<
+          string | null
+        >`${agents.agencyConfig}->'heterogeneousProvider'->>'type'`,
         updatedAt: topics.updatedAt,
         projectWorkingDirectoryId: topics.projectWorkingDirectoryId,
       })
