@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { type LobeChatDatabase } from '@lobechat/database';
 import { getTestDB } from '@lobechat/database/test-utils';
+import { LINEAR_DEFAULT_IMPORT_STATE_TYPES, LINEAR_OPEN_ISSUE_STATE_TYPES } from '@lobechat/types';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -14,11 +15,13 @@ import { LinearIssueSyncService, MAX_TASKS_CREATED_PER_SYNC } from '../issueSync
 
 const linear = vi.hoisted(() => ({
   getLinearIssuesByIds: vi.fn(),
+  getLinearProjectTeamIds: vi.fn(),
   listLinearIssues: vi.fn(),
 }));
 vi.mock('../issues', async (importOriginal) => ({
   ...(await importOriginal<typeof IssuesModule>()),
   getLinearIssuesByIds: linear.getLinearIssuesByIds,
+  getLinearProjectTeamIds: linear.getLinearProjectTeamIds,
   listLinearIssues: linear.listLinearIssues,
 }));
 
@@ -141,6 +144,45 @@ describe('LinearIssueSyncService (real PostgreSQL)', () => {
     expect((await linkedTask('1'))?.status).toBe('completed');
   });
 
+  it('closes the task of a project issue that lives in another team than the filter', async () => {
+    // A project linked to teams PKG and LOBE whose issues all live in LOBE,
+    // synced through a rule that names PKG.
+    const projectFilter = {
+      linearProjectId: 'project-1',
+      stateTypes: [...filter.stateTypes],
+      teamId: 'team-pkg',
+    };
+    const project = { id: 'project-1', name: 'LobeHub Model' };
+    const lobeIssue = issue({ id: '1', project, team: { id: 'team-lobe', key: 'LOBE' } });
+    linear.getLinearProjectTeamIds.mockResolvedValue(['team-pkg', 'team-lobe']);
+    serve([lobeIssue]);
+    const service = new LinearIssueSyncService(db, userId);
+    expect((await service.syncByFilter(TOKEN, projectFilter)).created).toBe(1);
+
+    // Closed in Linear, so the open-states filter no longer returns it.
+    linear.listLinearIssues.mockResolvedValue({ hasMore: false, issues: [] });
+    linear.getLinearIssuesByIds.mockResolvedValue([
+      { ...lobeIssue, state: { name: 'Done', type: 'completed' } },
+    ]);
+    const result = await service.syncByFilter(TOKEN, projectFilter);
+
+    expect(result.closed).toBe(1);
+    expect((await linkedTask('1'))?.status).toBe('completed');
+  });
+
+  it('fails a project rule whose teams cannot be read instead of narrowing the closing pass', async () => {
+    linear.getLinearProjectTeamIds.mockRejectedValue(new Error('Linear API error: timeout'));
+    serve([issue({ id: '1', team: { id: 'team-lobe', key: 'LOBE' } })]);
+
+    await expect(
+      new LinearIssueSyncService(db, userId).syncByFilter(TOKEN, {
+        linearProjectId: 'project-1',
+        stateTypes: [...filter.stateTypes],
+        teamId: 'team-pkg',
+      }),
+    ).rejects.toThrow('timeout');
+  });
+
   it('does not interrupt a running task when its issue is closed', async () => {
     serve([issue({ id: '1' })]);
     const service = new LinearIssueSyncService(db, userId);
@@ -165,6 +207,37 @@ describe('LinearIssueSyncService (real PostgreSQL)', () => {
     // Picked explicitly: imported, then closed like its issue.
     expect(result.created).toBe(1);
     expect((await linkedTask('1'))?.status).toBe('completed');
+  });
+
+  it('imports completed issues as completed tasks when the filter includes completed', async () => {
+    serve([
+      issue({ id: '1', state: { name: 'Done', type: 'completed' } }),
+      issue({ id: '2', state: { name: 'In Progress', type: 'started' } }),
+    ]);
+    const service = new LinearIssueSyncService(db, userId);
+
+    const result = await service.syncByFilter(TOKEN, {
+      stateTypes: [...LINEAR_DEFAULT_IMPORT_STATE_TYPES],
+      teamId: TEAM,
+    });
+
+    expect(result).toMatchObject({ created: 2, skipped: [] });
+    expect((await linkedTask('1'))?.status).toBe('completed');
+    expect((await linkedTask('2'))?.status).toBe('backlog');
+  });
+
+  it('skips completed issues when the filter only asks for open states', async () => {
+    serve([issue({ id: '1', state: { name: 'Done', type: 'completed' } })]);
+    const service = new LinearIssueSyncService(db, userId);
+
+    const result = await service.syncByFilter(TOKEN, {
+      stateTypes: [...LINEAR_OPEN_ISSUE_STATE_TYPES],
+      teamId: TEAM,
+    });
+
+    expect(result.created).toBe(0);
+    expect(result.skipped).toEqual([{ identifier: 'ENG-1', reason: 'closed' }]);
+    expect(await linkedTask('1')).toBeNull();
   });
 
   it('nests a sub-issue under the task of its parent issue', async () => {
