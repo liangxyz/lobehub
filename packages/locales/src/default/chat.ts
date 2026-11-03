@@ -970,6 +970,10 @@ export default {
     'This link now opens a different agent. Switching to it — try again once it opens. Your draft is kept.',
   'input.agentSlugUnconfirmed':
     'Couldn’t confirm which agent this link opens. Check your connection, then try again.',
+  'input.concurrencyLimit':
+    'You have too many agent tasks running at once. Send again when one finishes.',
+  'input.concurrencyLimitWithCount':
+    'Your plan runs up to {{count}} agent tasks at once. Send again when one finishes.',
   'input.costEstimate.creditsPerMillionTokens': '{{credits}} credits/M tokens',
   'input.costEstimate.hint': 'Estimated cost: ~{{credits}} credits',
   'input.costEstimate.inputLabel': 'Input',
@@ -2079,6 +2083,7 @@ export default {
   'taskDetail.goalTimeline.title': 'Round progress',
   'taskDetail.activities': 'Activities',
   'taskDetail.activitiesEmpty': 'No activity yet',
+  'taskDetail.activitiesLoadMore': 'Show earlier activity ({{count}})',
   'taskDetail.artifacts': 'Artifacts',
   'taskDetail.untitled': 'Untitled',
   'taskDetail.artifactMenu.delete': 'Remove from task',
@@ -3342,6 +3347,9 @@ export default {
   'tool.intervention.stop': 'Stop',
   'tool.intervention.stopTooltip':
     'Stop here — nothing pending runs and the agent does not continue',
+  'tool.intervention.switchToAutoRun': 'Switch to auto approve',
+  'tool.intervention.switchToAutoRunDesc':
+    'Approve this call and stop asking from now on. Calls that must always ask still ask.',
   'tool.intervention.renderFallback.description':
     'This display was downgraded to raw JSON because the current model was not capable enough to generate a stable interactive payload. Switch to a stronger model and try again.',
   'tool.intervention.renderFallback.rawJson': 'Raw JSON',
@@ -3710,6 +3718,12 @@ export default {
   'workingPanel.overview.empty':
     'Workspace activity and outputs will appear here as the agent works.',
   'workingPanel.overview.emptyTitle': 'Ready to work',
+  'workingPanel.overview.profile.view': 'View profile',
+  'workingPanel.profile.description': 'About',
+  'workingPanel.profile.model': 'Model',
+  'workingPanel.profile.noDescription': 'No description yet',
+  'workingPanel.profile.tabs.detail': 'Details',
+  'workingPanel.profile.tabs.workspace': 'Workspace',
   'workingPanel.overview.deviceError': 'Could not load the device status',
   'workingPanel.overview.environmentError': 'Could not load the repository status',
   'workingPanel.overview.execution.device': 'Connected device',
