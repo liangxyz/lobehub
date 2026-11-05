@@ -1,9 +1,9 @@
 {
   "canary": {
-    "lastPublishedTag": "v2.3.2-canary.2",
-    "lastPublishedSha": "e536d219604c92581b667bc449d84f0ac39c4bc3",
-    "lastPublishedAt": "2026-11-05T02:46:26.406Z",
-    "updatedAt": "2026-11-05T02:46:26.406Z"
+    "lastPublishedTag": "v2.3.2-canary.3",
+    "lastPublishedSha": "550747590db2f4c680ada515c6a8b7aa78348cfa",
+    "lastPublishedAt": "2026-11-05T18:16:54.704Z",
+    "updatedAt": "2026-11-05T18:16:54.704Z"
   },
   "stable": {
     "lastPublishedTag": "v2.3.1",
@@ -11,8 +11,8 @@
     "lastPublishedAt": "2026-11-04T01:36:53.570Z",
     "updatedAt": "2026-11-04T01:36:53.570Z"
   },
-  "lastPublishedTag": "v2.3.2-canary.2",
-  "lastPublishedSha": "e536d219604c92581b667bc449d84f0ac39c4bc3",
-  "lastPublishedAt": "2026-11-05T02:46:26.406Z",
-  "updatedAt": "2026-11-05T02:46:26.406Z"
+  "lastPublishedTag": "v2.3.2-canary.3",
+  "lastPublishedSha": "550747590db2f4c680ada515c6a8b7aa78348cfa",
+  "lastPublishedAt": "2026-11-05T18:16:54.704Z",
+  "updatedAt": "2026-11-05T18:16:54.704Z"
 }
