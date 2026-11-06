@@ -963,6 +963,11 @@ export default {
   'heteroAgent.executionTarget.switchTopic.ok': 'Switch',
   'heteroAgent.executionTarget.switchTopic.title': 'Move this topic to another environment?',
   'heteroAgent.executionTarget.unknownDevice': 'Unknown device',
+  'heteroAgent.executionTarget.wake': 'Wake now',
+  'heteroAgent.executionTarget.wakeFailed': 'Could not wake this cloud device. Try again.',
+  'heteroAgent.executionTarget.wakeStarting':
+    'The cloud device is still starting. A run on it waits until it is ready.',
+  'heteroAgent.executionTarget.wakesWhenUsed': 'Wakes when used',
   'hideForYou':
     "Direct message content is hidden. Please enable 'Show Direct Message Content' in settings to view.",
   'history.title': 'The Agent will keep only the latest {{count}} messages.',
@@ -4388,4 +4393,15 @@ export default {
   'sandboxDrive.folderOnDriveDesc': '{{drive}} · {{path}}',
   'input.costEstimate.hintUsd': 'Estimated cost: about {{amount}}',
   'input.costEstimate.usdPerMillionTokens': '{{amount}} / 1M tokens',
+  'taskLabel.add': 'Add labels',
+  'taskLabel.anyInGroup': 'Any {{name}}',
+  'taskLabel.createFailed': 'Failed to create label',
+  'taskLabel.createNamed': 'Create label “{{name}}”',
+  'taskLabel.empty': 'No labels yet. Type a name to create one.',
+  'taskLabel.label': 'Labels',
+  'taskLabel.noLabel': 'No label',
+  'taskLabel.noLabels': 'No labels',
+  'taskLabel.searchPlaceholder': 'Search or create labels…',
+  'taskList.filter.field.label': 'Label',
+  'taskList.groupBy.labelGroup': 'Label: {{name}}',
 };

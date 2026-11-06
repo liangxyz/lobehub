@@ -190,16 +190,19 @@ export const styles = stylex.create({
   composerRow: {
     display: 'flex',
     alignItems: 'flex-end',
-    gap: 4,
-    paddingBlock: 4,
-    paddingInline: 4,
+    gap: 8,
+    minHeight: 48,
+    paddingBlock: 8,
+    paddingInline: 8,
   },
   composerEditor: {
     overflowY: 'auto',
     flex: '1',
     minWidth: 0,
     maxHeight: 240,
-    paddingBlock: 0,
+    // Buttons sit on the last line; glyphs ride high in the line box, so drop the
+    // text 2px to center it on the 28px icons beside it.
+    marginBlockEnd: -2,
   },
   /** Takes the composer's place while the channel or thread is archived. */
   archivedNotice: {
