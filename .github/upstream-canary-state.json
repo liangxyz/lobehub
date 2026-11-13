@@ -6,13 +6,13 @@
     "updatedAt": "2026-11-12T18:50:27.708Z"
   },
   "stable": {
-    "lastPublishedTag": "v2.3.2",
-    "lastPublishedSha": "6508958035bf24f5e170cae76d49e584ee470471",
-    "lastPublishedAt": "2026-11-06T23:44:56.495Z",
-    "updatedAt": "2026-11-06T23:44:56.495Z"
+    "lastPublishedTag": "v2.3.3",
+    "lastPublishedSha": "1bc5acc195f733381c1108e65a1578dac59fdda4",
+    "lastPublishedAt": "2026-11-13T00:07:07.903Z",
+    "updatedAt": "2026-11-13T00:07:07.903Z"
   },
-  "lastPublishedTag": "v2.3.4-canary.1",
-  "lastPublishedSha": "249a73268cdc62d07f7b02da84db069a004990c8",
-  "lastPublishedAt": "2026-11-12T18:50:27.708Z",
-  "updatedAt": "2026-11-12T18:50:27.708Z"
+  "lastPublishedTag": "v2.3.3",
+  "lastPublishedSha": "1bc5acc195f733381c1108e65a1578dac59fdda4",
+  "lastPublishedAt": "2026-11-13T00:07:07.903Z",
+  "updatedAt": "2026-11-13T00:07:07.903Z"
 }
