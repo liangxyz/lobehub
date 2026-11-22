@@ -1,61 +1,50 @@
 'use client';
 
-import type { EnvironmentVisibility } from '@lobechat/types';
-import { Flexbox, Icon, Tabs } from '@lobehub/ui';
-import { LockIcon, UsersIcon } from 'lucide-react';
-import { memo, useState } from 'react';
+import { Flexbox, Text } from '@lobehub/ui';
+import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useParams } from 'react-router';
 
 import { MAX_WIDTH } from '@/const/layoutTokens';
 import EnvironmentManager from '@/features/EnvironmentManager';
+import EnvironmentDetailPage from '@/features/EnvironmentManager/EnvironmentDetailPage';
+import { useWorkspaceAwareNavigate } from '@/features/Workspace/useWorkspaceAwareNavigate';
 
 /**
- * The workspace's environments, in two pools behind tabs — the same split the
- * workspace device page draws, for the same reason.
+ * The workspace's environments in one list: what members have published, and
+ * the caller's own private ones, marked with a lock. Running in a published
+ * one means running in its instances, which carry whatever a session left in
+ * them.
  *
- * - Workspace: what members have published. Running in one means running in its
- *   instances, which carry whatever a session left in them.
- * - Private: the caller's own, which is where every environment starts.
- *
- * The tab also decides where a new environment lands, so creating one from the
- * Private tab cannot quietly publish it.
- *
- * The tabs are handed to the manager rather than rendered above it: they belong
- * on the same row as the actions, and the manager owns that row.
+ * A new environment starts private, so creating one cannot quietly publish
+ * it; its row menu publishes it.
  */
 const WorkspaceEnvironmentsSetting = memo(() => {
   const { t } = useTranslation('setting');
-  const [visibility, setVisibility] = useState<EnvironmentVisibility>('public');
+  const { sub: environmentId } = useParams<{ sub?: string }>();
+  const navigate = useWorkspaceAwareNavigate();
+
+  if (environmentId)
+    return (
+      <Flexbox style={{ maxWidth: MAX_WIDTH, width: '100%' }}>
+        <EnvironmentDetailPage
+          environmentId={environmentId}
+          key={environmentId}
+          onBack={() => navigate('/settings/environments')}
+        />
+      </Flexbox>
+    );
 
   return (
     <Flexbox style={{ maxWidth: MAX_WIDTH, width: '100%' }}>
-      {/* Keyed on the pool so the selected row and its open panel do not
-            survive a tab switch — the environment they pointed at is not in
-            the list any more. */}
       <EnvironmentManager
-        key={visibility}
-        visibility={visibility}
-        tabs={
-          <Tabs
-            activeKey={visibility}
-            // Tabs fill their container by default, which pushed the actions
-            // onto a second row; size to the tabs so both share one.
-            style={{ width: 'auto' }}
-            items={[
-              {
-                icon: <Icon icon={UsersIcon} />,
-                key: 'public',
-                label: t('environments.visibility.tabs.workspace'),
-              },
-              {
-                icon: <Icon icon={LockIcon} />,
-                key: 'private',
-                label: t('environments.visibility.tabs.private'),
-              },
-            ]}
-            onChange={(key) => setVisibility(key as EnvironmentVisibility)}
-          />
+        createVisibility={'private'}
+        headerLeading={
+          <Text fontSize={13} style={{ flex: 1, minWidth: 0 }} type={'secondary'}>
+            {t('environments.workspaceListDesc')}
+          </Text>
         }
+        onOpenEnvironment={(id) => navigate(`/settings/environments/${encodeURIComponent(id)}`)}
       />
     </Flexbox>
   );
