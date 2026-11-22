@@ -147,6 +147,11 @@ export interface ChannelMemberWorktree {
 export type ChannelMemberMetadata = Record<string, unknown> & {
   /** The member who added this one; absent when they joined on their own or before it was kept. */
   invitedBy?: string;
+  /**
+   * This person turned off their own push notifications for the Channel. Agents still reply;
+   * that is the Agent member's `config.muted`.
+   */
+  notificationsMuted?: boolean;
   /** Worktree per conversation branch: a Thread id, or `main` for the main timeline. */
   worktrees?: Record<string, ChannelMemberWorktree>;
   /** The configured directory could not host a worktree (e.g. not a git repo); retried later. */
@@ -751,6 +756,12 @@ export interface ChannelListItem {
   /** Unread messages, Threads included, that @mention the caller; set by the Channel list. */
   mentionCount?: number;
   /**
+   * The caller turned off their own push notifications here, so a client leaves it out of the
+   * app badge too; set by the Channel list and detail. Personal: other members never see it, and
+   * Agents still reply.
+   */
+  notificationsMuted?: boolean;
+  /**
    * On a conversation between two people, the other person (relative to the viewer), who is also
    * the only entry of `memberAvatars`; null otherwise.
    */
@@ -805,7 +816,38 @@ export interface ChannelMemberEnvironmentPreview {
   deviceId: string | null;
   /** The device's friendly name, else its hostname; null when the device row is gone. */
   deviceName: string | null;
+  /**
+   * The device owner's approval for a private workspace device picked in this Channel;
+   * absent when the device needs none (public, personal, or the Agent's own setting).
+   */
+  grant?: ChannelMemberDeviceGrant;
   workingDirectory: string | null;
+}
+
+/** One Agent member's grant on someone's private device, as members of the Channel see it. */
+export interface ChannelMemberDeviceGrant {
+  /** Who decides it; the client offers approve / reject / revoke to this person only. */
+  deviceOwnerId: string;
+  id: string;
+  status: ChannelMemberGrantStatus;
+}
+
+/** A request on one of the caller's private devices, as the device owner reviews it. */
+export interface ChannelDeviceGrantItem {
+  agentId: string | null;
+  agentName: string | null;
+  channelId: string;
+  channelTitle: string;
+  createdAt: Date;
+  decidedAt: Date | null;
+  deviceId: string;
+  deviceName: string | null;
+  id: string;
+  memberId: string;
+  requesterName: string | null;
+  requesterUserId: string | null;
+  status: ChannelMemberGrantStatus;
+  workingDirectory: string;
 }
 
 export interface ChannelPublicMember {
