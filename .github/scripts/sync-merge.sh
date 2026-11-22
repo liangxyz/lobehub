@@ -14,6 +14,12 @@ if [[ -z "${UPSTREAM_COMMIT}" ]]; then
 fi
 
 FORK_SHA=$(git rev-parse HEAD)
+PROTECTED_PATHS=(
+  .github/workflows/
+  .github/scripts/check-upstream-canary.mjs
+  .github/scripts/sync-merge.sh
+  .github/upstream-canary-state.json
+)
 echo "Current fork HEAD: ${FORK_SHA}"
 echo "Upstream target commit: ${UPSTREAM_COMMIT}"
 
@@ -29,21 +35,19 @@ git merge "${UPSTREAM_COMMIT}" --no-ff --no-commit -m "chore(sync): sync upstrea
 MERGE_EXIT=$?
 set -e
 
-# Always restore the fork's workflows, sync scripts, and state from pre-merge FORK_SHA
-git restore --source="${FORK_SHA}" --staged --worktree -- \
-  .github/workflows/ \
-  .github/scripts/check-upstream-canary.mjs \
-  .github/scripts/sync-merge.sh \
-  .github/upstream-canary-state.json
+# Drop every index entry under protected paths, conflict stages included. A path the fork
+# removed but upstream modified becomes a modify/delete conflict, and git restore refuses
+# such unmerged entries when the path is absent from FORK_SHA.
+git rm -r -q --cached --ignore-unmatch -- "${PROTECTED_PATHS[@]}"
 
-git clean -fd .github/workflows/
+# Always restore the fork's workflows, sync scripts, and state from pre-merge FORK_SHA
+git restore --source="${FORK_SHA}" --staged --worktree -- "${PROTECTED_PATHS[@]}"
+
+# Remove upstream-only workflow files left in the worktree as untracked files
+git clean -fd -- .github/workflows/
 
 # Verify that protected paths exactly match FORK_SHA
-if ! git diff --exit-code "${FORK_SHA}" -- \
-  .github/workflows/ \
-  .github/scripts/check-upstream-canary.mjs \
-  .github/scripts/sync-merge.sh \
-  .github/upstream-canary-state.json >/dev/null; then
+if ! git diff --exit-code "${FORK_SHA}" -- "${PROTECTED_PATHS[@]}" >/dev/null; then
   echo "::error::Failed to restore fork workflow tree and sync scripts to exact match with ${FORK_SHA}" >&2
   git merge --abort || true
   exit 1
