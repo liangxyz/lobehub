@@ -53,6 +53,23 @@ if ! git diff --exit-code "${FORK_SHA}" -- "${PROTECTED_PATHS[@]}" >/dev/null; t
   exit 1
 fi
 
+# Stable tags come from upstream's release branch, which trails canary and receives backports
+# of fixes canary already carries in a newer form. Canary is the newer line, so a stable sync
+# keeps the fork canary version of every conflicting file; upstream's own merge of the release
+# branch into canary reaches the fork through the next canary sync. Canary tags keep stopping on
+# conflicts, since those meet fork-specific changes and need a manual decision.
+if [[ -n "${TARGET_TAG}" && ! "${TARGET_TAG}" =~ -canary\.[0-9]+$ ]]; then
+  mapfile -d '' -t STABLE_CONFLICTS < <(git diff --name-only -z --diff-filter=U)
+  for path in "${STABLE_CONFLICTS[@]}"; do
+    if git cat-file -e "${FORK_SHA}:${path}" 2>/dev/null; then
+      git checkout "${FORK_SHA}" -- "${path}"
+    else
+      git rm -q -f -- "${path}"
+    fi
+    echo "::warning::Stable sync ${TARGET_TAG}: kept fork canary version of ${path}"
+  done
+fi
+
 # Check if there are any remaining unresolved conflict paths outside protected paths
 UNRESOLVED=$(git diff --name-only --diff-filter=U)
 if [[ -n "${UNRESOLVED}" ]]; then
