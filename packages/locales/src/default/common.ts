@@ -30,6 +30,9 @@ export default {
   'agentViewAll.orderBy.updatedAt': 'Updated at',
   'agentViewAll.pendant.official': 'Official',
   'agentViewAll.removeFromSidebar': 'Hide from my sidebar',
+  'agentViewAll.recommendedSection.title': 'Recommended agents',
+  'agentViewAll.recommendedSection.empty':
+    'No recommended agents yet. Use “Add to recommended agents” in an agent’s menu.',
   'agentViewAll.sidebarSection.collapse': 'Fold',
   'agentViewAll.sidebarSection.expand': 'Unfold',
   'agentViewAll.sidebarSection.title': 'In Sidebar',
@@ -107,7 +110,7 @@ export default {
   'cmdk.keywords.billing': 'billing payment invoice transaction',
 
   'cmdk.keywords.marketplace':
-    'marketplace market community discover agent skill connector model provider mcp',
+    'plugin plugins marketplace market community discover agent skill connector model provider mcp',
 
   // CMDK search keywords (space-separated for i18n)
   'cmdk.keywords.contactUs': 'feedback issue bug problem',
@@ -450,14 +453,7 @@ export default {
   'navPanel.agent': 'Agents',
   'navPanel.createPrivateFolder': 'New private category',
   'navPanel.managePrivateFolders': 'Manage private categories',
-  'navPanel.myPinned': 'Pinned',
-  'navPanel.newChat': 'New chat',
   'navPanel.privateTooltip': 'Private · only you can see this',
-  'navPanel.showLessTeamPinned': 'Show less',
-  'navPanel.showMoreTeamPinned': 'Show {{count}} more',
-  'navPanel.teamPinned': 'Pinned for team',
-  'navPanel.teamPinnedHint': 'Pinned by admins for everyone in this workspace',
-  'navPanel.bottomDivider': 'Items below anchor to bottom',
   'navPanel.customizeSidebar': 'Customize Sidebar',
   'navPanel.openMenu': 'Open menu',
   'navPanel.shortcuts': 'Shortcuts',

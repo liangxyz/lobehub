@@ -41,6 +41,7 @@ import type { ChannelContacts } from './contacts';
 import { noChannelContacts } from './contacts';
 import { deleteMessage } from './delete';
 import { findThread } from './delivery';
+import { withDisplayTitles } from './displayTitle';
 import { editMessage } from './edit';
 import { ChannelError } from './error';
 import { syncMemberGrant } from './grants';
@@ -59,7 +60,7 @@ import {
   readOpenChannel,
 } from './projectAccess';
 import { joinPublicChannel, listJoinableChannels } from './publicAccess';
-import { retryJob } from './retry';
+import { type ChannelRetryMode, retryJob } from './retry';
 import { retryRouting } from './routing';
 import { type ChannelSearchOptions, searchChannelMessages } from './search';
 import { ChannelSectionRepository } from './sections';
@@ -81,6 +82,7 @@ import {
 
 export type { ChannelAddAgentInput } from './agent';
 export { memberEnvironment } from './agent';
+export { channelAttachments } from './attachments';
 export {
   CHANNEL_ROUTING_BATCH_SIZE,
   CHANNEL_ROUTING_LEASE_MS,
@@ -94,6 +96,7 @@ export type {
 } from './claim';
 export type { ChannelContacts } from './contacts';
 export { noChannelContacts } from './contacts';
+export * from './displayTitle';
 export type { ChannelErrorCode } from './error';
 export { ChannelError } from './error';
 export { ChannelExecutionRepository } from './execution';
@@ -105,6 +108,8 @@ export type {
   ChannelOpeningDecision,
 } from './opening';
 export type { ChannelAgentPostInput } from './post';
+export type { ChannelReplyErrorDraft, ChannelReplyErrorFacts } from './replyError';
+export type { ChannelRetryMode } from './retry';
 export type { AppliedChannelRouting, ChannelRoutingDecision } from './routing';
 export { ChannelSectionRepository } from './sections';
 export type { ChannelSendInput } from './send';
@@ -153,6 +158,7 @@ export class ChannelRepository {
     /** The direct conversation's Agent environment; the caller resolved and checked it. */
     agentConfig?: ChannelMemberConfig;
     agents?: ChannelAddAgentInput[];
+    metadata?: ChannelItem['metadata'];
     /** Callers check that the project is readable in this scope. */
     projectId?: string;
     title: string;
@@ -186,6 +192,7 @@ export class ChannelRepository {
       }
       const insert = tx.insert(channels).values({
         agentId,
+        metadata: params.metadata,
         projectId: params.projectId,
         userId: this.userId,
         title: params.title,
@@ -460,28 +467,26 @@ export class ChannelRepository {
     });
   };
 
+  /** Takes no channel lock, so a busy Channel's sends and job updates never queue a read. */
   detail = async (channelId: string, options?: Parameters<typeof readChannelView>[2]) => {
-    if (!(await this.findAccess(channelId)))
-      return readOpenChannel(this.db, this.userId, this.workspaceId, channelId, options);
-    return this.write(
-      channelId,
-      async (tx, access) => {
-        if (access.channel.isDeleted) throw new ChannelError('NOT_FOUND', 'Channel not found');
-        const admin = hasRole(access.member.role, 'admin');
-        const notificationsMuted = access.member.metadata?.notificationsMuted === true;
-        const view = await readChannelView(tx, channelId, options, this.userId);
-        const shared = await sharedAgentView(tx, access.channel, this.userId);
-        return {
-          channel: { ...access.channel, canDelete: admin, notificationsMuted, ...shared.channel },
-          joined: true,
-          sharedAgentOwner: shared.owner,
-          ...view,
-          // Mirrors `stop`: the requester or an admin.
-          jobs: viewerJobs(view.jobs, this.userId, (id) => admin || id === access.member.id),
-        };
-      },
-      { allowArchived: true, allowTrashed: true },
-    );
+    const view = await this.db.transaction(async (tx) => {
+      const access = await this.memberAccess(tx, channelId);
+      if (!access) return;
+      if (access.channel.isDeleted) throw new ChannelError('NOT_FOUND', 'Channel not found');
+      const admin = hasRole(access.member.role, 'admin');
+      const notificationsMuted = access.member.metadata?.notificationsMuted === true;
+      const view = await readChannelView(tx, channelId, options, this.userId);
+      const shared = await sharedAgentView(tx, access.channel, this.userId);
+      return {
+        channel: { ...access.channel, canDelete: admin, notificationsMuted, ...shared.channel },
+        joined: true,
+        sharedAgentOwner: shared.owner,
+        ...view,
+        // Mirrors `stop`: the requester or an admin.
+        jobs: viewerJobs(view.jobs, this.userId, (id) => admin || id === access.member.id),
+      };
+    });
+    return view ?? readOpenChannel(this.db, this.userId, this.workspaceId, channelId, options);
   };
 
   createThread = async (channelId: string, input: Parameters<typeof createChannelThread>[2]) =>
@@ -557,7 +562,8 @@ export class ChannelRepository {
   /**
    * Channels the caller belongs to in the current scope, newest first. Archived ones are
    * included with their `status`, so they stay readable outside the active list. Active open
-   * project Channels the caller has not joined follow with `joined: false`.
+   * project Channels the caller has not joined follow with `joined: false`. A conversation
+   * between two Agents is left out: it opens from the report where the asking began.
    */
   list = async (): Promise<
     Array<
@@ -578,6 +584,7 @@ export class ChannelRepository {
         sharedAgentHandle: string | null;
         threadMentions: ChannelThreadMention[];
         unreadCount: number;
+        displayTitle: string;
       }
     >
   > => {
@@ -601,7 +608,9 @@ export class ChannelRepository {
       .innerJoin(channelMembers, eq(channelMembers.channelId, channels.id))
       .leftJoin(agents, eq(agents.id, channels.agentId))
       .leftJoin(agentShares, eq(agentShares.agentId, channels.agentId))
-      .where(and(this.membershipWhere(), notTrashed(channels.isDeleted)))
+      .where(
+        and(this.membershipWhere(), notTrashed(channels.isDeleted), isNull(channels.agentPairKey)),
+      )
       .orderBy(desc(channels.createdAt));
     const open = await listUnjoinedOpenChannels(this.db, this.userId, this.workspaceId);
     const previewIds = [...rows.map(({ channel }) => channel.id), ...open.map(({ id }) => id)];
@@ -722,7 +731,7 @@ export class ChannelRepository {
         };
       },
     );
-    return [
+    const items = [
       ...joined,
       // Not joined: nothing is unread or pending for the caller yet.
       ...open.map((channel) => ({
@@ -746,6 +755,7 @@ export class ChannelRepository {
         unreadCount: 0,
       })),
     ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    return withDisplayTitles(this.db, items);
   };
 
   /**
@@ -871,16 +881,7 @@ export class ChannelRepository {
 
       // Read membership only after the lock: a removal or demotion committed by the previous
       // lock holder must be visible here, not the snapshot from before the wait.
-      const [row] = await tx
-        .select({ channel: channels, member: channelMembers, role: this.callerRole() })
-        .from(channels)
-        .innerJoin(channelMembers, eq(channelMembers.channelId, channels.id))
-        .where(and(eq(channels.id, channelId), this.membershipWhere()))
-        .limit(1);
-      let access: ChannelAccess | undefined = row && {
-        channel: row.channel,
-        member: { ...row.member, role: row.role },
-      };
+      let access: ChannelAccess | undefined = await this.memberAccess(tx, channelId);
       if (!access && options.joinOpen) {
         // Joining is itself a write, so a trashed or archived Channel stays closed to newcomers.
         const open = await findOpenChannel(tx, this.userId, this.workspaceId, channelId);
@@ -1117,22 +1118,15 @@ export class ChannelRepository {
       return retryRouting(tx, channelId, messageId);
     });
 
-  /**
-   * Queues a reply that could not reach its device again. Like a stop, only its requester or an
-   * admin may retry it.
-   */
-  retryJob = async (channelId: string, jobId: string): Promise<ChannelJobItem> =>
-    this.write(channelId, async (tx, { member }) => {
-      if (!hasRole(member.role, 'admin')) {
-        const [job] = await tx
-          .select({ requesterMemberId: channelJobs.requesterMemberId })
-          .from(channelJobs)
-          .where(and(eq(channelJobs.channelId, channelId), eq(channelJobs.id, jobId)));
-        if (job && job.requesterMemberId !== member.id)
-          throw new ChannelError('FORBIDDEN', 'Only the requester or an admin can retry this job');
-      }
-      return retryJob(tx, channelId, jobId);
-    });
+  /** Queues a failed reply again, like a stop only by its requester or an admin. */
+  retryJob = async (
+    channelId: string,
+    jobId: string,
+    mode: ChannelRetryMode = 'retry',
+  ): Promise<ChannelJobItem> =>
+    this.write(channelId, (tx, { member }) =>
+      retryJob(tx, channelId, jobId, mode, hasRole(member.role, 'admin') ? undefined : member.id),
+    );
 
   private addOwner = async (tx: Transaction, channelId: string) => {
     const [member] = await tx
@@ -1165,6 +1159,17 @@ export class ChannelRepository {
       )
       .limit(1);
     return row;
+  };
+
+  /** The caller's active membership, with the role permission checks see. */
+  private memberAccess = async (tx: Transaction, channelId: string) => {
+    const [row] = await tx
+      .select({ channel: channels, member: channelMembers, role: this.callerRole() })
+      .from(channels)
+      .innerJoin(channelMembers, eq(channelMembers.channelId, channels.id))
+      .where(and(eq(channels.id, channelId), this.membershipWhere()))
+      .limit(1);
+    return row && { channel: row.channel, member: { ...row.member, role: row.role } };
   };
 
   /**

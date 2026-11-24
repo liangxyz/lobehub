@@ -1,5 +1,5 @@
 import type { BotWakeDecisionPage } from '@lobechat/types';
-import { CHANNEL_LIMITS, SIGNAL_DECISION_OUTCOMES } from '@lobechat/types';
+import { CHANNEL_ASK_LIMITS, CHANNEL_LIMITS, SIGNAL_DECISION_OUTCOMES } from '@lobechat/types';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -248,6 +248,16 @@ export const channelRouter = router({
       z.object({
         before: z.number().int().positive().optional(),
         channelId,
+        /**
+         * The client opens a reply's canvas beside the Channel. Released clients without a canvas
+         * view omit it and keep canvases off the cards.
+         */
+        includeCanvasWorks: z.boolean().optional(),
+        /**
+         * The client renders the opt-in Work types (files, collections) on reply cards. Released
+         * desktop clients without them omit it and keep receiving only the types they know.
+         */
+        includeFileWorks: z.boolean().optional(),
         limit: z.number().int().min(1).max(100).optional(),
         threadId: threadId.nullish(),
       }),
@@ -467,6 +477,13 @@ export const channelRouter = router({
       await ctx.channelService.removeThread(input.channelId, input.threadId);
       return { success: true };
     }),
+  /** Runs a failed reply again in the conversation it stopped in; see `retryJob` for a fresh start. */
+  resumeJob: channelProcedure
+    .input(z.object({ channelId, jobId: z.uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      await ctx.channelService.resumeJob(input.channelId, input.jobId);
+      return { success: true };
+    }),
   retryJob: channelProcedure
     .input(z.object({ channelId, jobId: z.uuid() }))
     .mutation(async ({ ctx, input }) => {
@@ -477,6 +494,29 @@ export const channelRouter = router({
     .input(z.object({ channelId, messageId: z.uuid() }))
     .mutation(async ({ ctx, input }) => ({
       data: await ctx.channelService.retryRouting(input.channelId, input.messageId),
+      success: true,
+    })),
+  answerAsk: channelProcedure
+    .input(
+      z.object({
+        answers: z
+          .array(
+            z.object({
+              other: z.string().max(CHANNEL_ASK_LIMITS.otherLength).optional(),
+              selected: z
+                .array(z.string().max(CHANNEL_ASK_LIMITS.labelLength))
+                .max(CHANNEL_ASK_LIMITS.maxOptions),
+            }),
+          )
+          .min(1)
+          .max(CHANNEL_ASK_LIMITS.maxQuestions),
+        channelId,
+        messageId: z.uuid(),
+        requestKey: z.string().min(1).max(200),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => ({
+      data: await ctx.channelService.answerAsk(input.channelId, input),
       success: true,
     })),
   send: externalChannelProcedure
